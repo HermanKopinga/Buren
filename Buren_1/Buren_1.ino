@@ -152,9 +152,6 @@ void loop(void)
 
       // Serial.println (readVcc(), DEC);
       readVcc();
-      // Delay just a little bit to let the other unit
-      // make the transition to receiver
-      delay(20);
     }
 
     time = (float)(buffer[0]) + (float) buffer [1]/100;
@@ -176,15 +173,16 @@ void loop(void)
     monkeyLives = (bitField & 0x1);
     character = (bitField & 0x3c) >> 2;
 
+    // First, stop listening so we can talk
+    radio.stopListening();
+
     rainbow();
     makeColor();
    
     if (cricket) {
       playCricket();// CHIRP 
     }
-    // First, stop listening so we can talk
-    radio.stopListening();
-
+    
     delay(rest*10);
     red=0;
     green=0;
@@ -215,11 +213,8 @@ void loop(void)
     }
     bool ok = radio.write(&buffer, sizeof(buffer) );
 
-    // Send the final one back.
-    radio.write(&got_time, sizeof(unsigned long));
-
     Serial.print("Sent response.\n\r");
-    delay(rest*10+200);
+    delay(rest*10*3);
     // Now, resume listening so we catch the next packets.
     radio.startListening();
   }
@@ -265,7 +260,7 @@ void loop(void)
       Serial.println("failed.");
     }
 
-    delay(rest*10*2);
+    delay(rest*10*3);
     
     // Now, continue listening
     radio.startListening();
