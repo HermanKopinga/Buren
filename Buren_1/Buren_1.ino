@@ -227,7 +227,7 @@ void loop(void)
     center = 127;
     frequency = 0.3;
     cricket = 1;
-    
+    intensity = 255;
     // Prepare buffer for transmit.
     bitField = cricket << 7 |batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
     buffer[0] = (byte) time;         // Only the whole number of time
@@ -307,9 +307,9 @@ void rainbow() {
    Serial.print(blue);
    Serial.print("blue");
    */
-  if (time > 64.0){
-    time=0;    
-  }
+//  if (time > 64.0){
+//    time=0;    
+//  }
 }
 
 void makeColor() {
