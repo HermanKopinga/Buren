@@ -40,6 +40,7 @@ byte rest = 0;
 byte restSpeed = 0;
 byte future = 0;
 byte bitField = 0;
+bool cricket = 0;
 bool findMyPixi = 0;
 bool batteryLevel = 0;
 byte character = 0;
@@ -153,12 +154,12 @@ void loop(void)
       delay(20);
     }
 
-    time = buffer[0] + buffer [1]/100;
-    frequency = buffer[2] / 100; 
+    time = (float)(buffer[0]) + (float) buffer [1]/100;
+    frequency = (float) buffer[2] / 100; 
     broad = buffer[3];
     center = buffer[4];
     intensity = buffer[5];
-    colorShift = buffer[6] / 100;
+    colorShift = (float) buffer[6] / 100;
     fadeOut = buffer[7];
     fadeSpeedIn = buffer[8];
     fadeSpeedOut = buffer[9];
@@ -166,6 +167,7 @@ void loop(void)
     restSpeed = buffer[11]; // Signed??
     future = buffer[12];
     bitField = buffer[13];
+    cricket = (bitField & 0x80) >> 7;
     findMyPixi = (bitField & 0x2) >> 1;
     batteryLevel = (bitField & 0x40) >> 6;
     monkeyLives = (bitField & 0x1);
@@ -180,9 +182,9 @@ void loop(void)
     delay(rest*10);
 
     // Prepare buffer for transmit.
-    bitField = batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
-    buffer[0] = int(time);         // Only the whole number of time
-    buffer[1] = time-(long)time;   // Only the fraction of time
+    bitField = cricket << 7 |batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
+    buffer[0] = (byte) time;         // Only the whole number of time
+    buffer[1] = ((time - (long) time)*100);   // Only the fraction of time
     buffer[2] = frequency * 100;   // Loses precision, no problem :)
     buffer[3] = broad;
     buffer[4] = center;
