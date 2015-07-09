@@ -214,15 +214,15 @@ void loop(void)
     radio.write(&got_time, sizeof(unsigned long));
 
     Serial.print("Sent response.\n\r");
-    delay(rest*10+200);
+    delay(rest*10*2);
     // Now, resume listening so we catch the next packets.
     radio.startListening();
   }
   
   if (!digitalRead(buttonPin)) {
     radio.stopListening();
+    colorShift = 1;
     time = 10; 
-    colorShift = .05;
     rest = 50;
     broad = 127;
     center = 127;
