@@ -3,8 +3,24 @@
 #include "RF24.h" // rf lib
 #include <Adafruit_DotStar.h>
 #include "printf.h"// used for debuggin the radio.print
-
-
+/*1 TimeIn = Byte start time for color
+2 Frequentie = Byte freq for color calcualtion
+3 Broad = Byte  color calculation
+4 Center =  Byte range of color calculation
+5 Intensity = start intensity led
+6 ColorShift = Byte Hoeveel veranderd de kleur tussen pixies 
+7 FadeOut = Byte Speed to fade the led across pixies to black =0 ook stop passing on
+8 FadeSpeedIn = Byte Speed to fade in the led inside the pixie
+9 FadeSpeedOut = Byte Speed to fade out led inside pixie
+10 Rest = Byte stop listening after sending
+11 RestSpeed = Singt bite to speed up or slow down sending
+12  Future     =  Byte future expansion
+13  Cricket = Bit turn on cricket
+15 BatteryLevel = Bit show us your batt level
+14 Character = 4bits Caracter (its an nibble)
+15 FindMyPixi = Bit show were you are
+16 MonkyLives  = Bit got mental!!!
+*/
 
 // PIXI dust
 #define PAYLOAD_SIZE 9
@@ -25,6 +41,9 @@ bool monkeyLives = 0;
 byte buffer[PAYLOAD_SIZE];
 
 
+// piezo hight
+int low =10;
+
 // variables voor color shift
 float frequency = .3; // color wheel
 float time; // color wheel
@@ -39,7 +58,7 @@ byte greenB= 0;
 //
 // Hardware configuration
 //
-const int speakerPin = A1;
+const int speakerPin = 5; // speaker pin is located underneeth the atmeaga
 // Set up nRF24L01 radio on SPI bus plus pins 9 & 10 
 RF24 radio(9,10);
 #define NUMPIXELS 3 // Number of LEDs in strip
@@ -58,9 +77,27 @@ void setup(void){
 Serial.begin(9600);
 printf_begin();  // strart the print.h
 pinMode(speakerPin, OUTPUT);
+// beging seq led test
+strip.begin(); 
+strip.setPixelColor(0, strip.Color(255, 255, 255));
+strip.show();
+delay(100);
+strip.setPixelColor(1, strip.Color(255, 255, 255));
+strip.show();
+delay(100);
+strip.setPixelColor(2, strip.Color(255, 255, 255));
+strip.show();
+delay(100);
+strip.setPixelColor(0, strip.Color(0, 0, 0));
+strip.setPixelColor(1, strip.Color(0, 0, 0));
+strip.setPixelColor(2, strip.Color(0, 0, 0));
+strip.show();
+// end led test
 
-strip.begin();  
-strip.show(); // Initialize all pixels to 'off'
+
+
+
+ // Initialize all pixels to 'off'
   
 radio.begin(); // start rf
 // other radio setups:
@@ -116,7 +153,7 @@ radio.begin(); // start rf
       // make the transition to receiver
       delay(20);
     }
-
+  
     red = buffer[0];
     green = buffer[1]; 
     blue = buffer[2];
@@ -141,7 +178,7 @@ radio.begin(); // start rf
 
     rainbow();
     makeColor(red,green,blue);
-
+   // cricked();// CHIRP 
     // First, stop listening so we can talk
     radio.stopListening();
 
@@ -226,4 +263,19 @@ void rainbow() {
  // }
 }
  
+ /// piezo speaker kreak
+ void cricked(){ 
+// tone(speakerPin, 200, 1000);
+    analogWrite(speakerPin, 255);
+    delay(low);
+    analogWrite(speakerPin, 0);
+    delay(low*random(2  ));
+    analogWrite(speakerPin, 255);
+    delay(low*random(2));
+    analogWrite(speakerPin, 0);
+    delay(low*random(10));
+    analogWrite(speakerPin, 255);
+    delay(low);
+    analogWrite(speakerPin, 0);
+ }
  
