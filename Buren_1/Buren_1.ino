@@ -178,7 +178,9 @@ void loop(void)
 
     rainbow();
     makeColor();
-    // cricked();// CHIRP 
+    if (cricket) {
+      cricket();// CHIRP 
+    }
     // First, stop listening so we can talk
     radio.stopListening();
 
@@ -218,9 +220,14 @@ void loop(void)
   }
   
   if (!digitalRead(buttonPin)) {
-      radio.stopListening();
-    time =  10; 
+    radio.stopListening();
+    time = 10; 
     rest = 50;
+    broad = 127;
+    center = 127;
+    frequency = 0.3;
+    cricket = 1;
+    
     // Prepare buffer for transmit.
     bitField = cricket << 7 |batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
     buffer[0] = (byte) time;         // Only the whole number of time
@@ -244,17 +251,15 @@ void loop(void)
       Serial.println(buffer[i], BIN);  
     }
     bool ok = radio.write(&buffer, sizeof(buffer) );
+  
+    if (ok) {
+      Serial.println("ok...");
+    }
+    else {
+      Serial.println("failed.");
+    }
 
-
-   
-   
-    
-    if (ok)
-        Serial.println("ok...");
-    else
-        Serial.println("failed.");
-
-    //delay(501);
+    delay(rest*10*2);
     
     // Now, continue listening
     radio.startListening();
@@ -315,7 +320,7 @@ void makeColor() {
 }
 
 /// piezo speaker kreak
-void cricked() { 
+void cricket() { 
   // tone(speakerPin, 200, 1000);
   analogWrite(speakerPin, 255);
   delay(low);
