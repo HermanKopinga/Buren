@@ -178,6 +178,7 @@ void loop(void)
 
     rainbow();
     makeColor();
+   
     if (cricket) {
       playCricket();// CHIRP 
     }
@@ -185,6 +186,10 @@ void loop(void)
     radio.stopListening();
 
     delay(rest*10);
+    red=0;
+    green=0;
+    blue=0;
+    makeColor();
 
     // Prepare buffer for transmit.
     bitField = cricket << 7 |batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
@@ -214,15 +219,15 @@ void loop(void)
     radio.write(&got_time, sizeof(unsigned long));
 
     Serial.print("Sent response.\n\r");
-    delay(rest*10*2);
+    delay(rest*10+200);
     // Now, resume listening so we catch the next packets.
     radio.startListening();
   }
   
   if (!digitalRead(buttonPin)) {
     radio.stopListening();
-    colorShift = 1;
     time = 10; 
+    colorShift = .05;
     rest = 50;
     broad = 127;
     center = 127;
