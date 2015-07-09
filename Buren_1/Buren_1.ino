@@ -222,6 +222,7 @@ void loop(void)
   if (!digitalRead(buttonPin)) {
     radio.stopListening();
     time = 10; 
+    colorShift = .05;
     rest = 50;
     broad = 127;
     center = 127;
