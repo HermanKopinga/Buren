@@ -179,7 +179,7 @@ void loop(void)
     rainbow();
     makeColor();
     if (cricket) {
-      cricket();// CHIRP 
+      playCricket();// CHIRP 
     }
     // First, stop listening so we can talk
     radio.stopListening();
@@ -320,7 +320,7 @@ void makeColor() {
 }
 
 /// piezo speaker kreak
-void cricket() { 
+void playCricket() { 
   // tone(speakerPin, 200, 1000);
   analogWrite(speakerPin, 255);
   delay(low);
