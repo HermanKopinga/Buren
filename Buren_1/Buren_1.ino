@@ -216,12 +216,7 @@ void loop(void)
 }
 
 
-void makeColor() {
-  for (int i = 0; i < NUMPIXELS; i++ ) {
-    strip.setPixelColor(i, strip.Color(red, green, blue));
-    strip.show();
-  }     
-}
+
 
 
 // ------------------------ read batt level  
@@ -241,18 +236,36 @@ long readVcc() {
 
 
 void rainbow() { 
-  //http://krazydad.com/tutorials/makecolors.php
-  time = time++;
 
-  Serial.print(red);
-  Serial.print("red");
-  Serial.print(green);
-  Serial.print("green"); 
-  Serial.print(blue);
-  Serial.print("blue");
-  //if (time > 64.0){
-  //time=0;
-  // }
+  //http://krazydad.com/tutorials/makecolors.php
+  time = time + colorShift;
+  intensity = intensity - fadeOut;
+
+  red   = sin(frequency* time + 0 )     * broad + center;
+  green = sin(frequency* time + 2*PI/3) * broad + center;
+  blue  = sin(frequency* time + 4*PI/3) * broad + center;
+
+  red   = (red* intensity)/255;
+  green = (green* intensity)/255;
+  blue  = (blue* intensity)/255;
+  /*
+ Serial.print(red);
+   Serial.print("red");
+   Serial.print(green);
+   Serial.print("green"); 
+   Serial.print(blue);
+   Serial.print("blue");
+   */
+  if (time > 64.0){
+    time=0;    
+  }
+}
+
+void makeColor() {
+  for (int i = 0; i < NUMPIXELS; i++ ) {
+    strip.setPixelColor(i, strip.Color(red, green, blue));
+    strip.show();
+  }     
 }
 
 /// piezo speaker kreak
