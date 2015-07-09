@@ -211,8 +211,29 @@ void loop(void)
       Serial.print(": ");
       Serial.println(buffer[i], BIN);  
     }
-    bool ok = radio.write(&buffer, sizeof(buffer) );
+    
+    // Send the packet
+    bool ok = radio.write(&buffer, sizeof(buffer));
+    // If at first you don't succeed, try again :-D
+    ok = radio.write(&buffer, sizeof(buffer));
+    // Olav Huizer, dumb solutions to intelligent problems.
+    ok = radio.write(&buffer, sizeof(buffer));
+    // If at first you don't succeed, try again :-D    
+    ok = radio.write(&buffer, sizeof(buffer));
+    // Olav Huizer, dumb solutions to intelligent problems.
+    ok = radio.write(&buffer, sizeof(buffer));    
+    delay(6);    // Herman wanted a delay... *sigh*
+    ok = radio.write(&buffer, sizeof(buffer));
+    delay(12);   // Herman wanted a delay... *sigh*    
+    ok = radio.write(&buffer, sizeof(buffer));
 
+    if (ok) {
+      Serial.println("ok...");
+    }
+    else {
+      Serial.println("failed.");
+    }
+    
     Serial.print("Sent response.\n\r");
     delay(rest*10*3);
     // Now, resume listening so we catch the next packets.
@@ -251,7 +272,21 @@ void loop(void)
       Serial.print(": ");
       Serial.println(buffer[i], BIN);  
     }
-    bool ok = radio.write(&buffer, sizeof(buffer) );
+
+    // Send the packet
+    bool ok = radio.write(&buffer, sizeof(buffer));
+    // If at first you don't succeed, try again :-D
+    ok = radio.write(&buffer, sizeof(buffer));
+    // Olav Huizer, dumb solutions to intelligent problems.
+    ok = radio.write(&buffer, sizeof(buffer));
+    // If at first you don't succeed, try again :-D    
+    ok = radio.write(&buffer, sizeof(buffer));
+    // Olav Huizer, dumb solutions to intelligent problems.
+    ok = radio.write(&buffer, sizeof(buffer));    
+    delay(6);    // Herman wanted a delay... *sigh*
+    ok = radio.write(&buffer, sizeof(buffer));
+    delay(12);   // Herman wanted a delay... *sigh*    
+    ok = radio.write(&buffer, sizeof(buffer));
   
     if (ok) {
       Serial.println("ok...");
