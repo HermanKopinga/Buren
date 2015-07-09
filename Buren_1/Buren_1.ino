@@ -63,6 +63,7 @@ byte blue = 0;
 //
 // Hardware configuration
 //
+const int buttonPin = A1; // nutton for triggering sends
 const int speakerPin = 5; // speaker pin is located underneeth the atmeaga
 // Set up nRF24L01 radio on SPI bus plus pins 9 & 10 
 RF24 radio(9,10);
@@ -79,6 +80,8 @@ const uint64_t pipe = 0xF0F0F0F0E1LL;
 
 void setup(void){
 
+  pinMode(buttonPin, INPUT_PULLUP);
+  
   Serial.begin(9600);
   printf_begin();  // strart the print.h
   pinMode(speakerPin, OUTPUT);
@@ -211,6 +214,49 @@ void loop(void)
     Serial.print("Sent response.\n\r");
     delay(rest*10+200);
     // Now, resume listening so we catch the next packets.
+    radio.startListening();
+  }
+  
+  if (!digitalRead(buttonPin)) {
+      radio.stopListening();
+    time =  10; 
+    rest = 50;
+    // Prepare buffer for transmit.
+    bitField = cricket << 7 |batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
+    buffer[0] = (byte) time;         // Only the whole number of time
+    buffer[1] = ((time - (long) time)*100);   // Only the fraction of time
+    buffer[2] = frequency * 100;   // Loses precision, no problem :)
+    buffer[3] = broad;
+    buffer[4] = center;
+    buffer[5] = intensity;
+    buffer[6] = colorShift * 100;  // Loses precision, no problem :)
+    buffer[7] = fadeOut;
+    buffer[8] = fadeSpeedIn;
+    buffer[9] = fadeSpeedOut;
+    buffer[10] = rest;
+    buffer[11] = restSpeed;
+    buffer[12] = future;
+    buffer[13] = bitField;    
+    Serial.println("\nNow sending ");
+    for (int i = 0; i < PAYLOAD_SIZE; i++) {
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.println(buffer[i], BIN);  
+    }
+    bool ok = radio.write(&buffer, sizeof(buffer) );
+
+
+   
+   
+    
+    if (ok)
+        Serial.println("ok...");
+    else
+        Serial.println("failed.");
+
+    //delay(501);
+    
+    // Now, continue listening
     radio.startListening();
   }
 }
