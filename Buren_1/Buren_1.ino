@@ -165,7 +165,7 @@ void loop(void)
     fadeOut = buffer[7];
     fadeSpeedIn = buffer[8];
     fadeSpeedOut = buffer[9];
-    ledTime = buffer[10]
+    ledTime = buffer[10];
     rest = buffer[11];
     restSpeed = buffer[12]; // Signed??
     future = buffer[13];
