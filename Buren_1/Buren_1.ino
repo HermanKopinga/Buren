@@ -160,6 +160,18 @@ void loop(void)
   }
 
   if (!digitalRead(buttonPin)) {
+    // Set standard values, this PIXI is the origin :)
+    time = 10; 
+    colorShift = 1;
+    rest = 50;
+    broad = 127;
+    center = 127;
+    frequency = 0.3;
+    cricket = 1;
+    intensity = 255;
+    batteryLevel=0;
+    ledTime = 50;
+    
     sendMessage();
     // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
     delay(rest*10*3);
