@@ -171,6 +171,8 @@ void loop(void)
     intensity = 255;
     batteryLevel=0;
     ledTime = 50;
+    fadeOut = 20; 
+    
     
     sendMessage();
     // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
