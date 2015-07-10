@@ -1,3 +1,21 @@
+/*
+  PIXI by Werccollective.com
+  programming: olav@werccollective.com, herman@kopinga.nl
+  
+  Updates on: https://github.com/HermanKopinga/Buren/
+  
+  Hardware:
+  - AVR Atmega328p @1MHz (internal oscillator)
+  - nrf24l01 wireless modules
+  - tp4056 lipo charger
+  - apa102 leds
+  - custom PCB
+  
+  Based on work by:
+  - https://github.com/maniacbug/RF24 (nrf24l01 library)
+  - http://adafruit.com/ (DotStar library)
+*/
+
 #include <SPI.h>
 #include "nRF24L01.h" // rf lib
 #include "RF24.h" // rf lib
@@ -47,11 +65,9 @@ bool findMyPixi = 0;
 bool batteryLevel = 0;
 byte character = 0;
 bool monkeyLives = 0;
-byte buffer[PAYLOAD_SIZE];
 
-
-// piezo hight
-int low = 10;
+// Piezo delay (basis for tone frequency of cricket).
+int piezoLow = 10;
 
 // variables voor color shift
 float redshift;
@@ -60,54 +76,37 @@ float blueshift;
 byte red = 0;
 byte green = 0;
 byte blue = 0;
-// battery life
 
 //
 // Hardware configuration
 //
 const int buttonPin = A1; // nutton for triggering sends
 const int speakerPin = 5; // speaker pin is located underneeth the atmeaga
-// Set up nRF24L01 radio on SPI bus plus pins 9 & 10 
-RF24 radio(9,10);
 #define NUMPIXELS 3 // Number of LEDs in strip
 // Here's how to control the LEDs from any two pins:
 #define DATAPIN    4
 #define CLOCKPIN   3
 Adafruit_DotStar strip = Adafruit_DotStar(NUMPIXELS, DATAPIN, CLOCKPIN,DOTSTAR_BGR);
 
-//
+// Set up nRF24L01 radio on SPI bus plus pins 9 & 10 
+RF24 radio(9,10);
 // Topology pipe adress
 const uint64_t pipe = 0xF0F0F0F0E1LL;
-
+byte buffer[PAYLOAD_SIZE];
 
 void setup(void){
-
-  pinMode(buttonPin, INPUT_PULLUP);
-
   Serial.begin(9600);
   printf_begin();  // strart the print.h
+
+  pinMode(buttonPin, INPUT_PULLUP);
   pinMode(speakerPin, OUTPUT);
-  // beging seq led test
+
+  // Let the user know we are started by doing a led marquee.
   strip.begin(); 
-  strip.setPixelColor(0, strip.Color(255, 255, 255));
-  strip.show();
-  delay(100);
-  strip.setPixelColor(1, strip.Color(255, 255, 255));
-  strip.show();
-  delay(100);
-  strip.setPixelColor(2, strip.Color(255, 255, 255));
-  strip.show();
-  delay(100);
-  strip.setPixelColor(0, strip.Color(0, 0, 0));
-  strip.setPixelColor(1, strip.Color(0, 0, 0));
-  strip.setPixelColor(2, strip.Color(0, 0, 0));
-  strip.show();
-  // end led test
+  ledMarquee();
 
-  // Initialize all pixels to 'off'
-
-  radio.begin(); // start rf
-  // other radio setups:
+  // Start rf
+  radio.begin(); 
   radio.setRetries(15,15); // amount of retries
   radio.setPALevel(RF24_PA_MIN); // range level
   radio.setAutoAck(0); // dont wait for responce
@@ -115,215 +114,59 @@ void setup(void){
   radio.setPayloadSize(PAYLOAD_SIZE); // amout of Bytes sending
 
   // Open pipes to other nodes for communication
-  //
+  // We are sending and listening on the same address.
   radio.openReadingPipe(0,pipe);
   radio.openWritingPipe(pipe);  
 
   // Start listening
   radio.startListening();
 
-  // Serial prints
+  // Serial prints (optional)
   radio.printDetails();
-  // printf("lisening");
-
 }
 
 void loop(void)
 {
-  //
-  // Pong back role.  Receive each packet, dump it out, and send it back
-  //
-
   // if there is data ready
   if ( radio.available() ) {
     // Dump the payloads until we've gotten everything
-    unsigned long got_time;
-    bool done = false;
+    getMessage();
 
-    while (!done) {
-      // Fetch the payload, and see if this was the last one.
-      done = radio.read(&buffer, PAYLOAD_SIZE);
-
-      // Spew it
-      Serial.print("Got payload ");
-      for (int i = 0; i < PAYLOAD_SIZE; i++) {
-        Serial.print(i);
-        Serial.print(": ");
-        Serial.println(buffer[i], BIN);  
-      }
-
-      // Serial.println (readVcc(), DEC);
-      //readVcc();
-    }
-
-    time = (float)(buffer[0]) + (float) buffer [1]/100;
-    frequency = (float) buffer[2] / 100; 
-    broad = buffer[3];
-    center = buffer[4];
-    intensity = buffer[5];
-    colorShift = (float) buffer[6] / 100;
-    fadeOut = buffer[7];
-    fadeSpeedIn = buffer[8];
-    fadeSpeedOut = buffer[9];
-    ledTime = buffer[10];
-    rest = buffer[11];
-    restSpeed = buffer[12]; // Signed??
-    future = buffer[13];
-    bitField = buffer[14];
-    cricket = (bitField & 0x80) >> 7;
-    findMyPixi = (bitField & 0x2) >> 1;
-    batteryLevel = (bitField & 0x40) >> 6;
-    monkeyLives = (bitField & 0x1);
-    character = (bitField & 0x3c) >> 2;
-
-    // First, stop listening so we can talk
+    // Do the work.
+    // First, stop listening.
     radio.stopListening();
 
+    // If the battery level was requested, show it through the leds.
     if (batteryLevel){
       batteryStatus();
     }
-
-    rainbow();
-    makeColor(red,green,blue);
-
-
+    else {
+      // The 'main attraction', prepare color and turn on leds.
+      rainbow();
+      makeColor(red,green,blue);
+    }
     if (cricket) {
-      playCricket();// CHIRP 
+      playCricket(); // CHIRP 
     }
-
-
     delay(ledTime*10);
-
-    makeColor(0,0,0);
-
-    if (intensity>0) { // chek if signal is "allive"
-
-      // Prepare buffer for transmit.
-      bitField = cricket << 7 |batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
-      buffer[0] = (byte) time;         // Only the whole number of time
-      buffer[1] = ((time - (long) time)*100);   // Only the fraction of time
-      buffer[2] = frequency * 100;   // Loses precision, no problem :)
-      buffer[3] = broad;
-      buffer[4] = center;
-      buffer[5] = intensity;
-      buffer[6] = colorShift * 100;  // Loses precision, no problem :)
-      buffer[7] = fadeOut;
-      buffer[8] = fadeSpeedIn;
-      buffer[9] = fadeSpeedOut;
-      buffer[10] = ledTime;
-      buffer[11] = rest;
-      buffer[12] = restSpeed;
-      buffer[13] = future;
-      buffer[14] = bitField;;    
-      Serial.println("\nNow sending ");
-      for (int i = 0; i < PAYLOAD_SIZE; i++) {
-        Serial.print(i);
-        Serial.print(": ");
-        Serial.println(buffer[i], BIN);  
-      }
-
-      // Send the packet
-      bool ok = radio.write(&buffer, sizeof(buffer));
-      // If at first you don't succeed, try again :-D
-      ok = radio.write(&buffer, sizeof(buffer));
-      // Olav Huizer, dumb solutions to intelligent problems.
-      ok = radio.write(&buffer, sizeof(buffer));
-      // If at first you don't succeed, try again :-D    
-      ok = radio.write(&buffer, sizeof(buffer));
-      // Olav Huizer, dumb solutions to intelligent problems.
-      ok = radio.write(&buffer, sizeof(buffer));    
-      delay(6);    // Herman wanted a delay... *sigh*
-      ok = radio.write(&buffer, sizeof(buffer));
-      delay(12);   // Herman wanted a delay... *sigh*    
-      ok = radio.write(&buffer, sizeof(buffer));
-
-      if (ok) {
-        Serial.println("ok...");
-      }
-      else {
-        Serial.println("failed.");
-      }
-
-      Serial.print("Sent response.\n\r");
+    makeColor(0,0,0); // Turn off leds.
+    if (intensity>0) { // check if signal is "allive"
+      sendMessage();
     }
+    // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
     delay(rest*10*3);
     // Now, resume listening so we catch the next packets.
     radio.startListening();
-
-
   }
 
-
-
   if (!digitalRead(buttonPin)) {
-    radio.stopListening();
-    time = 10; 
-    colorShift = 1;
-    rest = 50;
-    broad = 127;
-    center = 127;
-    frequency = 0.3;
-    cricket = 1;
-    intensity = 255;
-    batteryLevel=0;
-    ledTime = 50;
-    
-    // Prepare buffer for transmit.
-    bitField = cricket << 7 |batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
-    buffer[0] = (byte) time;         // Only the whole number of time
-    buffer[1] = ((time - (long) time)*100);   // Only the fraction of time
-    buffer[2] = frequency * 100;   // Loses precision, no problem :)
-    buffer[3] = broad;
-    buffer[4] = center;
-    buffer[5] = intensity;
-    buffer[6] = colorShift * 100;  // Loses precision, no problem :)
-    buffer[7] = fadeOut;
-    buffer[8] = fadeSpeedIn;
-    buffer[9] = fadeSpeedOut;
-    buffer[10] = ledTime;
-    buffer[11] = rest;
-    buffer[12] = restSpeed;
-    buffer[13] = future;
-    buffer[14] = bitField;    
-    Serial.println("\nNow sending ");
-    for (int i = 0; i < PAYLOAD_SIZE; i++) {
-      Serial.print(i);
-      Serial.print(": ");
-      Serial.println(buffer[i], BIN);  
-    }
-
-    // Send the packet
-    bool ok = radio.write(&buffer, sizeof(buffer));
-    // If at first you don't succeed, try again :-D
-    ok = radio.write(&buffer, sizeof(buffer));
-    // Olav Huizer, dumb solutions to intelligent problems.
-    ok = radio.write(&buffer, sizeof(buffer));
-    // If at first you don't succeed, try again :-D    
-    ok = radio.write(&buffer, sizeof(buffer));
-    // Olav Huizer, dumb solutions to intelligent problems.
-    ok = radio.write(&buffer, sizeof(buffer));    
-    delay(6);    // Herman wanted a delay... *sigh*
-    ok = radio.write(&buffer, sizeof(buffer));
-    delay(12);   // Herman wanted a delay... *sigh*    
-    ok = radio.write(&buffer, sizeof(buffer));
-
-    if (ok) {
-      Serial.println("ok...");
-    }
-    else {
-      Serial.println("failed.");
-    }
-
+    sendMessage();
+    // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
     delay(rest*10*3);
-
     // Now, continue listening
     radio.startListening();
   }
 }
-
-
-
-
 
 // ------------------------ read batt level  
 long readVcc() { 
@@ -340,13 +183,8 @@ long readVcc() {
   return result;
 }
 
-
-
-
-
 void rainbow() { 
-
-  //http://krazydad.com/tutorials/makecolors.php
+  // Based on: http://krazydad.com/tutorials/makecolors.php
   time = time + colorShift;
   intensity = intensity - fadeOut;
 
@@ -365,16 +203,15 @@ void rainbow() {
    Serial.print(blue);
    Serial.print("blue");
    */
-    if (time > 64.0){
-      time=0;    
-    }
+  if (time > 64.0){
+    time=0;    
+  }
 }
 
 
 void makeColor(byte redSend, byte greenSend, byte blueSend ) {
   for (int i = 0; i < NUMPIXELS; i++ ) {
     strip.setPixelColor(i, strip.Color(redSend, greenSend, blueSend));
-
   }     
   strip.show();
 }
@@ -383,21 +220,20 @@ void makeColor(byte redSend, byte greenSend, byte blueSend ) {
 void playCricket() { 
   // tone(speakerPin, 200, 1000);
   analogWrite(speakerPin, 255);
-  delay(low);
+  delay(piezoLow);
   analogWrite(speakerPin, 0);
-  delay(low*random(2  ));
+  delay(piezoLow*random(2  ));
   analogWrite(speakerPin, 255);
-  delay(low*random(2));
+  delay(piezoLow*random(2));
   analogWrite(speakerPin, 0);
-  delay(low*random(10));
+  delay(piezoLow*random(10));
   analogWrite(speakerPin, 255);
-  delay(low);
+  delay(piezoLow);
   analogWrite(speakerPin, 0);
 }
 
 
 void batteryStatus(){
-
   int battery = readVcc(); // sample battery status
   //  Serial.println (battery);  // print battery status
   //  Serial.println ("battery");  // print battery status
@@ -427,7 +263,108 @@ void batteryStatus(){
 
 }
 
+void ledMarquee() {
+  strip.setPixelColor(0, strip.Color(255, 255, 255));
+  strip.show();
+  delay(100);
+  strip.setPixelColor(1, strip.Color(255, 255, 255));
+  strip.show();
+  delay(100);
+  strip.setPixelColor(2, strip.Color(255, 255, 255));
+  strip.show();
+  delay(100);
+  strip.setPixelColor(0, strip.Color(0, 0, 0));
+  strip.setPixelColor(1, strip.Color(0, 0, 0));
+  strip.setPixelColor(2, strip.Color(0, 0, 0));
+  strip.show();
+}
 
+void sendMessage() {
+  // Prepare buffer for transmit.
+  bitField = cricket << 7 |batteryLevel << 6 | (character & 0x0F) << 2 | findMyPixi << 1 | monkeyLives;  
+  buffer[0] = (byte) time;         // Only the whole number of time
+  buffer[1] = ((time - (long) time)*100);   // Only the fraction of time
+  buffer[2] = frequency * 100;   // Loses precision, no problem :)
+  buffer[3] = broad;
+  buffer[4] = center;
+  buffer[5] = intensity;
+  buffer[6] = colorShift * 100;  // Loses precision, no problem :)
+  buffer[7] = fadeOut;
+  buffer[8] = fadeSpeedIn;
+  buffer[9] = fadeSpeedOut;
+  buffer[10] = ledTime;
+  buffer[11] = rest;
+  buffer[12] = restSpeed;
+  buffer[13] = future;
+  buffer[14] = bitField;
 
+  Serial.println("\nNow sending ");
+  for (int i = 0; i < PAYLOAD_SIZE; i++) {
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(buffer[i], BIN);  
+  }
 
+  // Send the packet multiple times.
+  bool ok = radio.write(&buffer, sizeof(buffer));
+  // If at first you don't succeed, try again :-D
+  ok = radio.write(&buffer, sizeof(buffer));
+  // Olav Huizer, dumb solutions to intelligent problems.
+  ok = radio.write(&buffer, sizeof(buffer));
+  // If at first you don't succeed, try again :-D    
+  ok = radio.write(&buffer, sizeof(buffer));
+  // Olav Huizer, dumb solutions to intelligent problems.
+  ok = radio.write(&buffer, sizeof(buffer));    
+  delay(6);    // Herman wanted a delay... *sigh*
+  ok = radio.write(&buffer, sizeof(buffer));
+  delay(12);   // Herman wanted a delay... *sigh*    
+  ok = radio.write(&buffer, sizeof(buffer));
+
+  // Debug info.
+  if (ok) {
+    Serial.println("ok...");
+  }
+  else {
+    Serial.println("failed.");
+  }
+
+  Serial.print("Sent response.\n\r");  
+}
+
+void getMessage() {
+  bool done = false;
+  
+  while (!done) {
+    // Fetch the payload, and see if this was the last one.
+    done = radio.read(&buffer, PAYLOAD_SIZE);
+
+    // Spew it (debugging)
+    Serial.print("Got payload ");
+    for (int i = 0; i < PAYLOAD_SIZE; i++) {
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.println(buffer[i], BIN);  
+    }
+  }  
+  // Convert the buffer to usable variables.
+  time = (float)(buffer[0]) + (float) buffer [1]/100;
+  frequency = (float) buffer[2] / 100; 
+  broad = buffer[3];
+  center = buffer[4];
+  intensity = buffer[5];
+  colorShift = (float) buffer[6] / 100;
+  fadeOut = buffer[7];
+  fadeSpeedIn = buffer[8];
+  fadeSpeedOut = buffer[9];
+  ledTime = buffer[10];
+  rest = buffer[11];
+  restSpeed = buffer[12]; // Signed??
+  future = buffer[13];
+  bitField = buffer[14];
+  cricket = (bitField & 0x80) >> 7;
+  findMyPixi = (bitField & 0x2) >> 1;
+  batteryLevel = (bitField & 0x40) >> 6;
+  monkeyLives = (bitField & 0x1);
+  character = (bitField & 0x3c) >> 2;  
+}
 
