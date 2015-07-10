@@ -14,18 +14,19 @@
  7 FadeOut (byte) Speed to fade the led across pixies to black =0 ook stop passing on
  8 FadeSpeedIn (byte) Speed to fade in the led inside the pixie
  9 FadeSpeedOut (byte) Speed to fade out led inside pixie
- 10 Rest (byte) stop listening after sending
- 11 RestSpeed (signed byte) to speed up or slow down sending
- 12 Future (byte) future expansion
- 13 Cricket (bit) turn on cricket
+ 10 LedTime (byte) Time the LED is on.
+ 11 Rest (byte) stop listening after sending
+ 12 RestSpeed (signed byte) to speed up or slow down sending
+ 13 Future (byte) future expansion
+ 14 Cricket (bit) turn on cricket
  15 BatteryLevel (bit) show us your batt level
- 14 Character (4 bits) Caracter (its an nibble)
- 15 FindMyPixi (bit) show were you are
- 16 MonkyLives (bit) got mental!!!
+ 16 Character (4 bits) Caracter (its an nibble)
+ 17 FindMyPixi (bit) show were you are
+ 18 MonkyLives (bit) got mental!!!
  */
 
 // PIXI dust
-#define PAYLOAD_SIZE 14
+#define PAYLOAD_SIZE 15
 
 float time = 0;
 float frequency = 0;
@@ -36,6 +37,7 @@ float colorShift = 0;
 byte fadeOut = 0;
 byte fadeSpeedIn = 0;
 byte fadeSpeedOut = 0;
+byte ledTime = 0;
 byte rest = 0;
 byte restSpeed = 0;
 byte future = 0;
@@ -163,10 +165,11 @@ void loop(void)
     fadeOut = buffer[7];
     fadeSpeedIn = buffer[8];
     fadeSpeedOut = buffer[9];
-    rest = buffer[10];
-    restSpeed = buffer[11]; // Signed??
-    future = buffer[12];
-    bitField = buffer[13];
+    ledTime = buffer[10]
+    rest = buffer[11];
+    restSpeed = buffer[12]; // Signed??
+    future = buffer[13];
+    bitField = buffer[14];
     cricket = (bitField & 0x80) >> 7;
     findMyPixi = (bitField & 0x2) >> 1;
     batteryLevel = (bitField & 0x40) >> 6;
@@ -201,10 +204,11 @@ void loop(void)
     buffer[7] = fadeOut;
     buffer[8] = fadeSpeedIn;
     buffer[9] = fadeSpeedOut;
-    buffer[10] = rest;
-    buffer[11] = restSpeed;
-    buffer[12] = future;
-    buffer[13] = bitField;    
+    buffer[10] = ledTime;
+    buffer[11] = rest;
+    buffer[12] = restSpeed;
+    buffer[13] = future;
+    buffer[14] = bitField;    
     Serial.println("\nNow sending ");
     for (int i = 0; i < PAYLOAD_SIZE; i++) {
       Serial.print(i);
@@ -262,10 +266,11 @@ void loop(void)
     buffer[7] = fadeOut;
     buffer[8] = fadeSpeedIn;
     buffer[9] = fadeSpeedOut;
-    buffer[10] = rest;
-    buffer[11] = restSpeed;
-    buffer[12] = future;
-    buffer[13] = bitField;    
+    buffer[10] = ledTime;
+    buffer[11] = rest;
+    buffer[12] = restSpeed;
+    buffer[13] = future;
+    buffer[14] = bitField;      
     Serial.println("\nNow sending ");
     for (int i = 0; i < PAYLOAD_SIZE; i++) {
       Serial.print(i);
