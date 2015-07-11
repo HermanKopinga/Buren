@@ -76,7 +76,7 @@ float blueshift;
 byte red = 0;
 byte green = 0;
 byte blue = 0;
-
+int live; // used to cast the byte intensity
 //
 // Hardware configuration
 //
@@ -150,7 +150,11 @@ void loop(void)
     }
     delay(ledTime*10);
     makeColor(0,0,0); // Turn off leds.
-    if (intensity>0) { // check if signal is "allive"
+    Serial.print(intensity);
+    Serial.print("intensity");
+    Serial.print(live);
+    Serial.print("live");
+    if (live>0) { // check if signal is "allive"
       sendMessage();
     }
     // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
@@ -200,8 +204,10 @@ long readVcc() {
 void rainbow() { 
   // Based on: http://krazydad.com/tutorials/makecolors.php
   time = time + colorShift;
-  intensity = intensity - fadeOut;
-
+  
+  live = (int) intensity; 
+  live = live - fadeOut;
+  intensity = (byte) live;
   red   = sin(frequency* time + 0 )     * broad + center;
   green = sin(frequency* time + 2*PI/3) * broad + center;
   blue  = sin(frequency* time + 4*PI/3) * broad + center;
