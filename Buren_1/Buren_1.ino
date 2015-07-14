@@ -143,9 +143,7 @@ void loop(void)
     else {
       // The 'main attraction', prepare color and turn on leds.
       rainbow();
-      startFadeIn();
       makeColor(red,green,blue);
-      startFadeOut();
     }
     if (cricket) {
       playCricket(); // CHIRP 
