@@ -30,8 +30,8 @@
  5 Intensity (byte) start intensity led
  6 ColorShift (byte) Hoeveel veranderd de kleur tussen pixies / 100
  7 FadeOut (byte) Speed to fade the led across pixies to black =0 ook stop passing on
- 8 FadeSpeedIn (byte) Speed to fade in the led inside the pixie
- 9 FadeSpeedOut (byte) Speed to fade out led inside pixie
+ 8 FadeSpeedIn (byte) Speed to fade in the led inside the pixie in miliseconds / 10
+ 9 FadeSpeedOut (byte) Speed to fade out led inside pixie miliseconds / 10
  10 LedTime (byte) Time the LED is on.
  11 Rest (byte) stop listening after sending
  12 RestSpeed (signed byte) to speed up or slow down sending
@@ -386,3 +386,23 @@ void getMessage() {
   character = (bitField & 0x3c) >> 2;  
 }
 
+// fade variables
+byte fadeIntensity;
+bool fadeDirection;
+int fadeStepTime;
+unsigned long lastFade;
+
+void startFadeIn() {
+  // calculate intensitystep 
+  fadeStepTime = (int)fadeSpeedIn * 10 / intensity;
+  fadeIntensity = 0;
+  lastFade = millis();
+}
+  
+void updateFade() {
+  int timeSincelLastFade = millis() - lastFade;
+  if (timeSincelLastFade < fadeStepTime) {
+    return;
+  }
+  intensity += timeSincelLastFade / fadeStepTime;
+}
