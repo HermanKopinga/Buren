@@ -143,7 +143,9 @@ void loop(void)
     else {
       // The 'main attraction', prepare color and turn on leds.
       rainbow();
+      startFadeIn();
       makeColor(red,green,blue);
+      startFadeOut();
     }
     if (cricket) {
       playCricket(); // CHIRP 
@@ -153,7 +155,7 @@ void loop(void)
     Serial.print(intensity);
     Serial.print("intensity");
    
-    if (intensity > fadeout) { // check if signal is "allive"
+    if (intensity > fadeOut) { // check if signal is "allive"
       sendMessage();
     }
     // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
@@ -226,7 +228,6 @@ void rainbow() {
   }
 }
 
-
 void makeColor(byte redSend, byte greenSend, byte blueSend ) {
   for (int i = 0; i < NUMPIXELS; i++ ) {
     strip.setPixelColor(i, strip.Color(redSend, greenSend, blueSend));
@@ -282,7 +283,7 @@ void batteryStatus(){
 }
 
 void ledMarquee() {
-  strip.setPixelColor(0, strip.Color(255, 255, 255));
+  strip.setPixelColor(0, strip.Color(255, 0, 0));
   strip.show();
   delay(100);
   strip.setPixelColor(1, strip.Color(255, 255, 255));
@@ -391,12 +392,23 @@ byte fadeIntensity;
 bool fadeDirection;
 int fadeStepTime;
 unsigned long lastFade;
+#define FADEIN 0
+#define FADEOUT 1
 
 void startFadeIn() {
   // calculate intensitystep 
   fadeStepTime = (int)fadeSpeedIn * 10 / intensity;
   fadeIntensity = 0;
   lastFade = millis();
+  fadeDirection = FADEIN;
+}
+
+void startFadeOut() {
+  // calculate intensitystep 
+  fadeStepTime = (int)fadeSpeedOut * 10 / intensity;
+  fadeIntensity = intensity;
+  lastFade = millis();
+  fadeDirection = FADEOUT;
 }
   
 void updateFade() {
@@ -404,5 +416,21 @@ void updateFade() {
   if (timeSincelLastFade < fadeStepTime) {
     return;
   }
-  intensity += timeSincelLastFade / fadeStepTime;
+  int fadeAmount = timeSincelLastFade / fadeStepTime;
+  if (fadeDirection == FADEIN) {
+    if (fadeIntensity + fadeAmount >= intensity) {
+      fadeIntensity = intensity;
+      return;
+    }
+    fadeIntensity += fadeAmount;
+  }
+  else { // FADEOUT
+    if (fadeIntensity - fadeAmount <= 0) {
+      fadeIntensity = 0;      
+      return;
+    }
+    fadeIntensity -= timeSincelLastFade / fadeStepTime;        
+  }
+  lastFade = millis();
 }
+
