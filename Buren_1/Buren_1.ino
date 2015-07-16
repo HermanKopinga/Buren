@@ -56,6 +56,7 @@
 
 // PIXI dust
 #define PAYLOAD_SIZE 15
+#define FRAMERATEDELAY 25 //1000ms/40fps
 
 float time = 0;
 float frequency = 0;
@@ -120,20 +121,21 @@ int ldrTotal = 15*300; // the running total initialized to start awake.
 int ldrAverage = 0;                // the average
 
 // Local fade variables
-byte fadeIntensity;
+float fadeIntensity;
 bool fadeDirection;
-int fadeStepTime;
+float fadeStep;
 unsigned long lastFade;
 #define FADINGIN 0
 #define FADINGOUT 1
 
-
+byte ledIntensity;
+byte sentReply = 0;
 byte isFading = 0;
 byte isResting = 0;
 
 // For gamma correcting the LED brightness
 // Human eyes don't preceive lightlevels as linear as a programmer might like.
-const byte Gamma[256] PROGMEM = {
+const byte Gamma[256] = {
   0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
   1,  1,  1,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
   2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  3,  3,  3,  3,
@@ -208,7 +210,8 @@ void loop(void) {
     justSlept = 0;
   }  
 
-  updateFade();
+
+
 
   // if there is data ready
   if (radio.available() && !isFading && !isResting) {
@@ -216,6 +219,9 @@ void loop(void) {
     getMessage();
     // First, stop listening so we can send later.
     radio.stopListening();
+
+
+
 
     // If the battery level was requested, show it through the leds.
     if (batteryLevel) {
@@ -231,20 +237,26 @@ void loop(void) {
     }
 
     receivedTime = millis();
+    sentReply = 0;
   }
 
-  if (receivedTime + fadeSpeedIn * 10 + ledTime * 10 <= millis()) {
+
+  if (millis() >= receivedTime + fadeSpeedIn * 10 + ledTime * 10 && fadeDirection == FADINGIN) {
     startFadeOut();
   }
 
-  if (receivedTime + rest * 10 <= millis()) {
-    if (intensity > fadeOut) {
-      sendMessage();
-      // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
-      delay(rest*10*3);
-    }
-    // Resume listening so we catch the next packets.
+  updateFade();
 
+  if (receivedTime + rest * 10 <= millis()) {
+    if (intensity > fadeOut && sentReply == 0) { //shouldn't send anymore, last pixi in the lin
+      sendMessage();
+      sentReply = 1;
+    }
+  }
+
+
+  // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
+  if(millis() >= receivedTime + rest * 10 * future) {    
     // David is like Olav :-P
     radio.read(&buffer, PAYLOAD_SIZE);
     radio.read(&buffer, PAYLOAD_SIZE);
@@ -255,10 +267,11 @@ void loop(void) {
     radio.read(&buffer, PAYLOAD_SIZE);
     radio.read(&buffer, PAYLOAD_SIZE);
 
+    // Resume listening so we catch the next packets.
     radio.startListening();    
     isResting = 0;
-    isFading = 0;
   }
+
 
   if (!digitalRead(buttonPin)) {
     // First, stop listening so we can send later.
@@ -266,16 +279,19 @@ void loop(void) {
 
     // Set standard values, this PIXI is an origin.
     time = 10; 
-    colorShift = 1;
-    rest = 50;
+    colorShift = 0.0255;
+    rest = 75;
     broad = 127;
     center = 127;
-    frequency = 0.3;
+    frequency = 1;
     cricket = 1;
     intensity = 255;
     batteryLevel=0;
     ledTime = 50;
-    fadeOut = 20; 
+    fadeOut = 0; 
+    fadeSpeedIn = 50; 
+    fadeSpeedOut = 50;
+    future = 3;
 
     sendMessage();
     // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
@@ -308,15 +324,16 @@ void rainbow() {
   // Based on: http://krazydad.com/tutorials/makecolors.php
   time = time + colorShift;
 
+  // Fadeout between pixies.
   intensity = intensity - fadeOut; 
 
-  red   = sin(frequency* time + 0 )     * broad + center;
-  green = sin(frequency* time + 2*PI/3) * broad + center;
-  blue  = sin(frequency* time + 4*PI/3) * broad + center;
+  red   = sin(frequency * time + 0 )     * broad + center;
+  green = sin(frequency * time + 2*PI/3) * broad + center;
+  blue  = sin(frequency * time + 4*PI/3) * broad + center;
 
-  red   = (red* intensity)/255;
-  green = (green* intensity)/255;
-  blue  = (blue* intensity)/255;
+  //  red   = (red * intensity)/255;
+  //  green = (green * intensity)/255;
+  //  blue  = (blue * intensity)/255;
   /*
  Serial.print(red);
    Serial.print("red");
@@ -334,7 +351,8 @@ void rainbow() {
 
 void makeColor(byte redSend, byte greenSend, byte blueSend ) {
   for (int i = 0; i < NUMPIXELS; i++ ) {
-    strip.setPixelColor(i, strip.Color(Gamma[redSend], Gamma[greenSend], Gamma[blueSend]));
+    //strip.setPixelColor(i, strip.Color(Gamma[redSend], Gamma[greenSend], Gamma[blueSend]));
+    strip.setPixelColor(i, strip.Color(redSend, greenSend, blueSend));
   }     
   strip.show();
 }
@@ -468,7 +486,6 @@ void sendMessage() {
 
   Serial.println("Sent response.");  
   // Sending done, little #hack to stop re-sending.
-  intensity = 0;
 }
 
 
@@ -481,6 +498,18 @@ void getMessage() {
   //while (!done) {
   // Fetch the payload, and see if this was the last one.
   done = radio.read(&buffer, PAYLOAD_SIZE);
+
+  if (buffer[13] == 10){
+    Serial.println("Bad Packet");
+
+    unsigned long timeStamp = millis();
+
+    while (millis() < timeStamp + 50){
+      if (radio.available()){
+        done = radio.read(&buffer, PAYLOAD_SIZE);
+      }
+    }
+  }
 
   // Spew it (debugging)
 #ifdef DEBUGRECEIVE
@@ -526,50 +555,51 @@ void getMessage() {
 
 
 void startFadeIn() {
-  // calculate intensitystep 
-  fadeStepTime = (int)fadeSpeedIn * 10 / intensity;
+  // calculate intensitystep
+  ledIntensity = intensity; 
+  rainbow();
+  fadeStep = ledIntensity * FRAMERATEDELAY / (fadeSpeedIn * 10.0);
   fadeIntensity = 0;
   lastFade = millis();
   fadeDirection = FADINGIN;
-  rainbow();  
+  Serial.println("Fading in");
 }
 
 
 
 void startFadeOut() {
   // calculate intensitystep 
-  fadeStepTime = (int)fadeSpeedOut * 10 / intensity;
-  fadeIntensity = intensity;
+  fadeStep = ledIntensity * FRAMERATEDELAY / (fadeSpeedOut * 10.0);
+  fadeIntensity = ledIntensity;
   lastFade = millis();
   fadeDirection = FADINGOUT;
+  Serial.println("Fading out"); 
 }
 
 
 
 void updateFade() {
-  if (millis() >= lastFade + fadeStepTime){
-
-    int fadeAmount = timeSincelLastFade / fadeStepTime;
+  if (millis() >= lastFade + FRAMERATEDELAY){
     if (fadeDirection == FADINGIN) {
-      if (fadeIntensity + fadeAmount >= intensity) {
-        fadeIntensity = intensity;
-        return;
+      if (fadeIntensity < ledIntensity){
+        fadeIntensity += fadeStep;
       }
-      fadeIntensity += fadeAmount;
     }
-    else { // FADEOUT
-      if (fadeIntensity - fadeAmount <= 0) {
-        fadeIntensity = 0;      
-        return;
+    if (fadeDirection == FADINGOUT) {
+      if (fadeIntensity > 0){
+        fadeIntensity -= fadeStep;
       }
-      fadeIntensity -= timeSincelLastFade / fadeStepTime;        
+      else if (isFading == 1){
+        isFading = 0;
+      }
     }
     lastFade = millis();
-
+    //    strip.setPixelColor(0, strip.Color(fadeIntensity, fadeIntensity, fadeIntensity));
+    //    strip.setPixelColor(1, strip.Color(fadeIntensity, fadeIntensity, fadeIntensity));
+    //    strip.setPixelColor(2, strip.Color(fadeIntensity, fadeIntensity, fadeIntensity));
+    //    strip.show();
+    makeColor(red*fadeIntensity/255,green*fadeIntensity/255,blue*fadeIntensity/255);
   }
-
-
-
 }
 
 
@@ -699,7 +729,7 @@ void detailedPrint(){
   Serial.print("Center: \t");// (byte) range of color calculation
   Serial.println(buffer[i]);  
   i++;
-  Serial.print("Intensity: \t");// (byte) start intensity led
+  Serial.print("intensity: \t");// (byte) start intensity led
   Serial.println(buffer[i]);  
   i++;
   Serial.print("ColorShift: \t");// (byte) Amount of color change betwe pixies / 10000
@@ -729,6 +759,18 @@ void detailedPrint(){
   Serial.print("Bitmask: \t"); //    Serial.println(buffer[i], BIN);  
   Serial.println(buffer[i], BIN);   
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
