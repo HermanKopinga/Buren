@@ -111,10 +111,12 @@ unsigned long receivedTime = 0;
 
 // Daylight detection averaging variables
 const int numLdrReadings = 15;
-int ldrReadings[numLdrReadings];   // the readings from the analog input
+// Fix that pixi starts awake
+// the readings from the analog input
+int ldrReadings[] = {
+  300,300,300,300,300,300,300,300,300,300,300,300,300,300,300};
 int ldrIndex = 0;                  // the index of the current reading
-//int ldrTotal = 350*numLdrReadings; // the running total initialized to start awake.
-int ldrTotal = 0; // the running total initialized to start awake.
+int ldrTotal = 15*300; // the running total initialized to start awake.
 int ldrAverage = 0;                // the average
 
 // Local fade variables
@@ -124,6 +126,9 @@ int fadeStepTime;
 unsigned long lastFade;
 #define FADINGIN 0
 #define FADINGOUT 1
+
+
+byte isFading = 0;
 
 // For gamma correcting the LED brightness
 // Human eyes don't preceive lightlevels as linear as a programmer might like.
@@ -201,10 +206,9 @@ void loop(void) {
   updateFade();
 
   // if there is data ready
-  if ( radio.available() ) {
+  if (radio.available() && !isFading ) {
     // Dump the payloads until we've gotten everything
     getMessage();
-
     // First, stop listening so we can send later.
     radio.stopListening();
 
@@ -217,6 +221,7 @@ void loop(void) {
         playCricket(); // CHIRP 
       }      
       startFadeIn();
+      isFading = 1;
     }
 
     receivedTime = millis();
@@ -230,10 +235,22 @@ void loop(void) {
     if (intensity > fadeOut) {
       sendMessage();
       // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
-      delay(rest*10*3);    
+      delay(rest*10*3);
     }
     // Resume listening so we catch the next packets.
+
+    // David is like Olav :-P
+    radio.read(&buffer, PAYLOAD_SIZE);
+    radio.read(&buffer, PAYLOAD_SIZE);
+    radio.read(&buffer, PAYLOAD_SIZE);
+    radio.read(&buffer, PAYLOAD_SIZE);
+    radio.read(&buffer, PAYLOAD_SIZE);
+    radio.read(&buffer, PAYLOAD_SIZE);
+    radio.read(&buffer, PAYLOAD_SIZE);
+    radio.read(&buffer, PAYLOAD_SIZE);
+
     radio.startListening();    
+    isFading = 0;
   }
 
   if (!digitalRead(buttonPin)) {
@@ -431,25 +448,29 @@ void sendMessage() {
   }
 
   Serial.println("Sent response.");  
+  // Sending done, little #hack to stop re-sending.
+  intensity = 0;
 }
 
 void getMessage() {
   bool done = false;
 
-  while (!done) {
-    // Fetch the payload, and see if this was the last one.
-    done = radio.read(&buffer, PAYLOAD_SIZE);
+  // This is now too fast :(
+  //  Todo: Commented out, only interested in first packet. 
+  //while (!done) {
+  // Fetch the payload, and see if this was the last one.
+  done = radio.read(&buffer, PAYLOAD_SIZE);
 
-    // Spew it (debugging)
+  // Spew it (debugging)
 #ifdef DEBUGRECEIVE
-    Serial.print("Got payload ");
-    for (int i = 0; i < PAYLOAD_SIZE; i++) {
-      Serial.print(i);
-      Serial.print(": ");
-      Serial.println(buffer[i], BIN);  
-    }
+  Serial.println("Got payload");
+  for (int i = 0; i < PAYLOAD_SIZE; i++) {
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(buffer[i], BIN);  
+  }
 #endif
-  }  
+  //}  
   // Convert the buffer to usable variables.
   time = (float)(buffer[0]) + (float) buffer [1]/100;
   frequency = (float) buffer[2] / 100; 
@@ -470,6 +491,10 @@ void getMessage() {
   batteryLevel = (bitField & 0x40) >> 6;
   monkeyLives = (bitField & 0x1);
   character = (bitField & 0x3c) >> 2;  
+
+
+  // To prevent re-sends messing up the logic.
+  radio.stopListening();
 }
 
 void startFadeIn() {
@@ -609,5 +634,7 @@ void stopSleep() {
   // Disable the WD interrupt. 
   WDTCSR &= ~(_BV(WDIE));
 }
+
+
 
 
