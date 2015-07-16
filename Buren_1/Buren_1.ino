@@ -14,13 +14,19 @@
   Based on work by:
   - https://github.com/maniacbug/RF24 (nrf24l01 library)
   - http://adafruit.com/ (DotStar library)
+  - http://donalmorrissey.blogspot.nl/2010/04/sleeping-arduino-part-5-wake-up-via.html  (sleep code)
+  - https://github.com/jgillick/arduino-LEDFader/blob/master/Curve.cpp Gamma correction
 */
+
 
 #include <SPI.h>
 #include "nRF24L01.h" // rf lib
 #include "RF24.h" // rf lib
 #include <Adafruit_DotStar.h>
-#include "printf.h"// used for debuggin the radio.print
+#include "printf.h" // used for debuggin the radio.print
+#include <avr/sleep.h> // For sleeping.
+#include <avr/power.h> // For sleeping.
+#include <avr/wdt.h> // For sleeping.
 
 /*
  1 time (2 bytes) start time for color (fraction: 8 bits.8 bits 0-255.0-255)
@@ -28,7 +34,7 @@
  3 Broad (byte) color calculation
  4 Center (byte) range of color calculation
  5 Intensity (byte) start intensity led
- 6 ColorShift (byte) Hoeveel veranderd de kleur tussen pixies / 100
+ 6 ColorShift (byte) Amount of color change betwe pixies / 10000
  7 FadeOut (byte) Speed to fade the led across pixies to black =0 ook stop passing on
  8 FadeSpeedIn (byte) Speed to fade in the led inside the pixie in miliseconds / 10
  9 FadeSpeedOut (byte) Speed to fade out led inside pixie miliseconds / 10
@@ -69,7 +75,7 @@ bool monkeyLives = 0;
 // Piezo delay (basis for tone frequency of cricket).
 int piezoLow = 10;
 
-// variables voor color shift
+// variables for color shift
 float redshift;
 float greenshift;
 float blueshift;
@@ -80,8 +86,9 @@ byte blue = 0;
 //
 // Hardware configuration
 //
-const int buttonPin = A1; // nutton for triggering sends
-const int speakerPin = 5; // speaker pin is located underneeth the atmeaga
+const int buttonPin = A1; // Button for triggering sends
+const int ldrPin = A5; // 
+const int speakerPin = 5; // speaker pin is located underneath the atmega
 #define NUMPIXELS 3 // Number of LEDs in strip
 // Here's how to control the LEDs from any two pins:
 #define DATAPIN    4
@@ -94,6 +101,49 @@ RF24 radio(9,10);
 const uint64_t pipe = 0xF0F0F0F0E1LL;
 byte buffer[PAYLOAD_SIZE];
 
+// Sleep counter.
+volatile int justSlept = 1;
+
+// Timing variables.
+unsigned long receivedTime = 0;
+
+// Daylight detection averaging variables
+const int numLdrReadings = 15;
+int ldrReadings[numLdrReadings];      // the readings from the analog input
+int ldrIndex = 0;                  // the index of the current reading
+int ldrTotal = 0;                  // the running total
+int ldrAverage = 0;                // the average
+
+
+// Local fade variables
+byte fadeIntensity;
+bool fadeDirection;
+int fadeStepTime;
+unsigned long lastFade;
+#define FADEIN 0
+#define FADEOUT 1
+
+// For gamma correcting the LED brightness
+// Human eyes don't preceive lightlevels as linear as a programmer might like.
+const byte Gamma[256] PROGMEM = {
+   0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+   1,  1,  1,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+   2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  3,  3,  3,  3,
+   3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  4,
+   4,  4,  4,  4,  4,  4,  5,  5,  5,  5,  5,  5,  5,  5,  5,  6,
+   6,  6,  6,  6,  6,  6,  6,  7,  7,  7,  7,  7,  7,  8,  8,  8,
+   8,  8,  8,  9,  9,  9,  9,  9, 10, 10, 10, 10, 10, 11, 11, 11,
+  11, 12, 12, 12, 12, 13, 13, 13, 14, 14, 14, 14, 15, 15, 15, 16,
+  16, 16, 17, 17, 18, 18, 18, 19, 19, 20, 20, 21, 21, 21, 22, 22,
+  23, 23, 24, 24, 25, 25, 26, 27, 27, 28, 28, 29, 30, 30, 31, 32,
+  32, 33, 34, 35, 35, 36, 37, 38, 39, 39, 40, 41, 42, 43, 44, 45,
+  46, 47, 48, 49, 50, 51, 52, 53, 55, 56, 57, 58, 59, 61, 62, 63,
+  65, 66, 68, 69, 71, 72, 74, 76, 77, 79, 81, 82, 84, 86, 88, 90,
+  92, 94, 96, 98,100,102,105,107,109,112,114,117,119,122,124,127,
+ 130,133,136,139,142,145,148,151,155,158,162,165,169,172,176,180,
+ 184,188,192,196,201,205,210,214,219,224,229,234,239,244,250,255,
+};
+
 void setup(void){
   Serial.begin(9600);
   printf_begin();  // strart the print.h
@@ -105,28 +155,28 @@ void setup(void){
   strip.begin(); 
   ledMarquee();
 
-  // Start rf
-  radio.begin(); 
-  radio.setRetries(15,15); // amount of retries
-  radio.setPALevel(RF24_PA_MIN); // range level
-  radio.setAutoAck(0); // dont wait for responce
-  radio.setDataRate(RF24_250KBPS); // set the datarate
-  radio.setPayloadSize(PAYLOAD_SIZE); // amout of Bytes sending
+  setupSleep();
 
-  // Open pipes to other nodes for communication
-  // We are sending and listening on the same address.
-  radio.openReadingPipe(0,pipe);
-  radio.openWritingPipe(pipe);  
-
-  // Start listening
-  radio.startListening();
-
-  // Serial prints (optional)
-  radio.printDetails();
+  setupRadio();
 }
 
-void loop(void)
-{
+void loop(void) {
+  while(dayLight()) {
+    if (justSlept == 0) {
+      radio.powerDown();  
+    }
+    /* Re-enter sleep mode. */
+    enterSleep();
+  }
+  
+  if (justSlept) {
+    setupRadio();
+    delay(100);
+    justSlept = 0;
+  }  
+
+  updateFade();
+
   // if there is data ready
   if ( radio.available() ) {
     // Dump the payloads until we've gotten everything
@@ -137,30 +187,38 @@ void loop(void)
     radio.stopListening();
 
     // If the battery level was requested, show it through the leds.
-    if (batteryLevel){
+    if (batteryLevel) {
       batteryStatus();
-    }
-    else {
-      // The 'main attraction', prepare color and turn on leds.
-      rainbow();
-      makeColor(red,green,blue);
-    }
+    }    
     if (cricket) {
       playCricket(); // CHIRP 
     }
-    delay(ledTime*10);
-    makeColor(0,0,0); // Turn off leds.
-    Serial.print(intensity);
-    Serial.print("intensity");
-   
-    if (intensity > fadeOut) { // check if signal is "allive"
-      sendMessage();
-    }
-    // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
-    delay(rest*10*3);
-    // Now, resume listening so we catch the next packets.
-    radio.startListening();
+
+    receivedTime = millis();
+    startFadeIn();
   }
+
+  if (receivedTime + fadeSpeedIn * 10 + ledTime * 10 <= millis()) {
+    startFadeOut();
+  }
+  
+  if (receivedTime + rest*10 <= millis()) {
+    sendMessage();
+  }
+  
+  // The 'main attraction', prepare color and turn on leds.
+
+  delay(ledTime*10);
+  makeColor(0,0,0); // Turn off leds.
+ 
+  if (intensity > fadeOut) { // check if signal is "allive"
+    sendMessage();
+  }
+
+  // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
+  delay(rest*10*3);
+  // Now, resume listening so we catch the next packets.
+  radio.startListening();
 
   if (!digitalRead(buttonPin)) {
     // Set standard values, this PIXI is the origin :)
@@ -175,7 +233,6 @@ void loop(void)
     batteryLevel=0;
     ledTime = 50;
     fadeOut = 20; 
-    
     
     sendMessage();
     // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
@@ -228,7 +285,7 @@ void rainbow() {
 
 void makeColor(byte redSend, byte greenSend, byte blueSend ) {
   for (int i = 0; i < NUMPIXELS; i++ ) {
-    strip.setPixelColor(i, strip.Color(redSend, greenSend, blueSend));
+    strip.setPixelColor(i, strip.Color(Gamma[redSend], Gamma[greenSend], Gamma[blueSend]));
   }     
   strip.show();
 }
@@ -305,7 +362,7 @@ void sendMessage() {
   buffer[3] = broad;
   buffer[4] = center;
   buffer[5] = intensity;
-  buffer[6] = colorShift * 100;  // Loses precision, no problem :)
+  buffer[6] = colorShift * 10000;  // Loses precision, no problem :)
   buffer[7] = fadeOut;
   buffer[8] = fadeSpeedIn;
   buffer[9] = fadeSpeedOut;
@@ -369,7 +426,7 @@ void getMessage() {
   broad = buffer[3];
   center = buffer[4];
   intensity = buffer[5];
-  colorShift = (float) buffer[6] / 100;
+  colorShift = (float) buffer[6] / 10000;
   fadeOut = buffer[7];
   fadeSpeedIn = buffer[8];
   fadeSpeedOut = buffer[9];
@@ -385,20 +442,13 @@ void getMessage() {
   character = (bitField & 0x3c) >> 2;  
 }
 
-// fade variables
-byte fadeIntensity;
-bool fadeDirection;
-int fadeStepTime;
-unsigned long lastFade;
-#define FADEIN 0
-#define FADEOUT 1
-
 void startFadeIn() {
   // calculate intensitystep 
   fadeStepTime = (int)fadeSpeedIn * 10 / intensity;
   fadeIntensity = 0;
   lastFade = millis();
   fadeDirection = FADEIN;
+  rainbow();  
 }
 
 void startFadeOut() {
@@ -432,3 +482,86 @@ void updateFade() {
   lastFade = millis();
 }
 
+void enterSleep(void)
+{
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);   /* EDIT: could also use SLEEP_MODE_PWR_DOWN for lowest power consumption. */
+  sleep_enable();
+  
+  /* Now enter sleep mode. */
+  sleep_mode();
+  
+  /* The program will continue from here after the WDT timeout*/
+  sleep_disable(); /* First thing to do is disable sleep. */
+  
+  /* Re-enable the peripherals. */
+  power_all_enable();
+}
+
+ISR(WDT_vect)
+{
+  justSlept++; // Semi sleep time counter in seconds.
+}
+
+void setupRadio () {
+  // Recover from sleep.
+  radio.powerUp();
+  radio.begin(); // start rf
+  // other radio setups:
+  radio.setRetries(15,15); // amount of retries
+  radio.setPALevel(RF24_PA_MIN); // range level
+  radio.setAutoAck(0); // dont wait for responce
+  radio.setDataRate(RF24_250KBPS); // set the datarate
+  radio.setPayloadSize(PAYLOAD_SIZE); // amout of Bytes sending
+  
+  // Open pipes to other nodes for communication
+  //
+  radio.openReadingPipe(0,pipe);
+  radio.openWritingPipe(pipe);  
+  
+  // Start listening
+  radio.startListening();  
+}
+
+bool dayLight () {
+  // subtract the last reading:
+  ldrTotal = ldrTotal - ldrReadings[ldrIndex];
+  // read from the sensor:
+  ldrReadings[ldrIndex] = analogRead(ldrPin);
+  // add the reading to the total
+  ldrTotal= ldrTotal + ldrReadings[ldrIndex];
+  // advance to the next position in the array:
+  ldrIndex = ldrIndex + 1;
+
+  // if we're at the end of the array...
+  if (ldrIndex >= numLdrReadings) {      
+    // ...wrap around to the beginning: 
+    ldrIndex = 0;              
+  }    
+
+  // calculate the average:
+  int ldrLevel = ldrTotal / numLdrReadings;         
+  
+  if (ldrLevel < 300) {
+    return 1;
+  }
+  else {
+    return 0;
+  }
+}
+
+void setupSleep() {
+ 
+  /* Clear the reset flag. */
+  MCUSR &= ~(1<<WDRF);
+  
+  /* In order to change WDE or the prescaler, we need to
+   * set WDCE (This will allow updates for 4 clock cycles).
+   */
+  WDTCSR |= (1<<WDCE) | (1<<WDE);
+
+  /* set new watchdog timeout prescaler value */
+  WDTCSR = 1<<WDP3; /* 4.0 seconds */
+  
+  /* Enable the WD interrupt (note: no reset). */
+  WDTCSR |= _BV(WDIE);
+}
