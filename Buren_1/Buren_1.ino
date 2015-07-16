@@ -46,7 +46,7 @@
  15 BatteryLevel (bit) show us your batt level
  16 Character (4 bits) Caracter (its an nibble)
  17 FindMyPixi (bit) show were you are
- 18 MonkyLives (bit) got mental!!!
+ 18 MonkyLives (bit) got mental!!! (test mode)
  */
 
 // PIXI dust
@@ -76,9 +76,6 @@ bool monkeyLives = 0;
 int piezoLow = 10;
 
 // variables for color shift
-float redshift;
-float greenshift;
-float blueshift;
 byte red = 0;
 byte green = 0;
 byte blue = 0;
@@ -120,8 +117,8 @@ byte fadeIntensity;
 bool fadeDirection;
 int fadeStepTime;
 unsigned long lastFade;
-#define FADEIN 0
-#define FADEOUT 1
+#define FADINGIN 0
+#define FADINGOUT 1
 
 // For gamma correcting the LED brightness
 // Human eyes don't preceive lightlevels as linear as a programmer might like.
@@ -150,6 +147,7 @@ void setup(void){
 
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(speakerPin, OUTPUT);
+  pinMode(ldrPin, INPUT);
 
   // Let the user know we are started by doing a led marquee.
   strip.begin(); 
@@ -161,7 +159,9 @@ void setup(void){
 }
 
 void loop(void) {
-  while(dayLight()) {
+  // Sleep on daylight OR if monkeyLives (test mode).
+  // Todo: daylight gets called too fast at nighttime, some timerstuff needed.
+  while(dayLight() || !monkeyLives ) {
     if (justSlept == 0) {
       radio.powerDown();  
     }
@@ -171,6 +171,7 @@ void loop(void) {
   
   if (justSlept) {
     setupRadio();
+    // Delay so radio settles.
     delay(100);
     justSlept = 0;
   }  
@@ -182,46 +183,42 @@ void loop(void) {
     // Dump the payloads until we've gotten everything
     getMessage();
 
-    // Do the work.
-    // First, stop listening.
+    // First, stop listening so we can send later.
     radio.stopListening();
 
     // If the battery level was requested, show it through the leds.
     if (batteryLevel) {
       batteryStatus();
     }    
-    if (cricket) {
-      playCricket(); // CHIRP 
+    else {
+      if (cricket) {
+        playCricket(); // CHIRP 
+      }      
+      startFadeIn();
     }
-
+    
     receivedTime = millis();
-    startFadeIn();
   }
 
   if (receivedTime + fadeSpeedIn * 10 + ledTime * 10 <= millis()) {
     startFadeOut();
   }
   
-  if (receivedTime + rest*10 <= millis()) {
-    sendMessage();
+  if (receivedTime + rest * 10 <= millis()) {
+    if (intensity > fadeOut) {
+      sendMessage();
+      // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
+      delay(rest*10*3);    
+    }
+    // Resume listening so we catch the next packets.
+    radio.startListening();    
   }
-  
-  // The 'main attraction', prepare color and turn on leds.
-
-  delay(ledTime*10);
-  makeColor(0,0,0); // Turn off leds.
- 
-  if (intensity > fadeOut) { // check if signal is "allive"
-    sendMessage();
-  }
-
-  // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
-  delay(rest*10*3);
-  // Now, resume listening so we catch the next packets.
-  radio.startListening();
 
   if (!digitalRead(buttonPin)) {
-    // Set standard values, this PIXI is the origin :)
+    // First, stop listening so we can send later.
+    radio.stopListening();
+
+    // Set standard values, this PIXI is an origin.
     time = 10; 
     colorShift = 1;
     rest = 50;
@@ -242,10 +239,11 @@ void loop(void) {
   }
 }
 
-// ------------------------ read batt level  
+// read batt level  
 long readVcc() { 
   long result;
   // Read 1.1V reference against AVcc
+  // Todo: does this work together with reading the LDR on A5 or is more setup needed?
   ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
   delay(2); // Wait for Vref to settle
   ADCSRA |= _BV(ADSC); // Convert
@@ -447,7 +445,7 @@ void startFadeIn() {
   fadeStepTime = (int)fadeSpeedIn * 10 / intensity;
   fadeIntensity = 0;
   lastFade = millis();
-  fadeDirection = FADEIN;
+  fadeDirection = FADINGIN;
   rainbow();  
 }
 
@@ -456,7 +454,7 @@ void startFadeOut() {
   fadeStepTime = (int)fadeSpeedOut * 10 / intensity;
   fadeIntensity = intensity;
   lastFade = millis();
-  fadeDirection = FADEOUT;
+  fadeDirection = FADINGOUT;
 }
   
 void updateFade() {
@@ -465,7 +463,7 @@ void updateFade() {
     return;
   }
   int fadeAmount = timeSincelLastFade / fadeStepTime;
-  if (fadeDirection == FADEIN) {
+  if (fadeDirection == FADINGIN) {
     if (fadeIntensity + fadeAmount >= intensity) {
       fadeIntensity = intensity;
       return;
