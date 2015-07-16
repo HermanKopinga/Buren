@@ -50,7 +50,7 @@
  */
 
 #define DEBUG
-#define DEBUGSLEEP
+//#define DEBUGSLEEP
 #define DEBUGSEND
 #define DEBUGRECEIVE
 
@@ -129,6 +129,7 @@ unsigned long lastFade;
 
 
 byte isFading = 0;
+byte isResting = 0;
 
 // For gamma correcting the LED brightness
 // Human eyes don't preceive lightlevels as linear as a programmer might like.
@@ -151,6 +152,8 @@ const byte Gamma[256] PROGMEM = {
   184,188,192,196,201,205,210,214,219,224,229,234,239,244,250,255,
 };
 
+
+
 void setup(void){
   Serial.begin(9600);
   printf_begin();  // strart the print.h
@@ -171,6 +174,8 @@ void setup(void){
   // Marquee again to make sure we didn't crash :-S
   ledMarquee();  
 }
+
+
 
 void loop(void) {
   // Sleep on daylight OR if monkeyLives (test mode).
@@ -206,7 +211,7 @@ void loop(void) {
   updateFade();
 
   // if there is data ready
-  if (radio.available() && !isFading ) {
+  if (radio.available() && !isFading && !isResting) {
     // Dump the payloads until we've gotten everything
     getMessage();
     // First, stop listening so we can send later.
@@ -222,6 +227,7 @@ void loop(void) {
       }      
       startFadeIn();
       isFading = 1;
+      isResting = 1;
     }
 
     receivedTime = millis();
@@ -250,6 +256,7 @@ void loop(void) {
     radio.read(&buffer, PAYLOAD_SIZE);
 
     radio.startListening();    
+    isResting = 0;
     isFading = 0;
   }
 
@@ -278,8 +285,9 @@ void loop(void) {
   }
 }
 
-// read batt level  
-long readVcc() { 
+
+
+long readVcc() { // read batt level  
   long result;
   // Read 1.1V reference against AVcc
   // Todo: does this work together with reading the LDR on A5 or is more setup needed?
@@ -293,6 +301,8 @@ long readVcc() {
   //Serial.println( result, DEC );
   return result;
 }
+
+
 
 void rainbow() { 
   // Based on: http://krazydad.com/tutorials/makecolors.php
@@ -320,6 +330,8 @@ void rainbow() {
   }
 }
 
+
+
 void makeColor(byte redSend, byte greenSend, byte blueSend ) {
   for (int i = 0; i < NUMPIXELS; i++ ) {
     strip.setPixelColor(i, strip.Color(Gamma[redSend], Gamma[greenSend], Gamma[blueSend]));
@@ -327,8 +339,9 @@ void makeColor(byte redSend, byte greenSend, byte blueSend ) {
   strip.show();
 }
 
-/// piezo speaker kreak
-void playCricket() { 
+
+
+void playCricket() { // piezo speaker kreak
   // tone(speakerPin, 200, 1000);
   analogWrite(speakerPin, 255);
   delay(piezoLow);
@@ -342,6 +355,7 @@ void playCricket() {
   delay(piezoLow);
   analogWrite(speakerPin, 0);
 }
+
 
 
 void batteryStatus(){
@@ -380,6 +394,8 @@ void batteryStatus(){
 
 }
 
+
+
 void ledMarquee() {
   strip.setPixelColor(0, strip.Color(255, 0, 0));
   strip.show();
@@ -395,6 +411,8 @@ void ledMarquee() {
   strip.setPixelColor(2, strip.Color(0, 0, 0));
   strip.show();
 }
+
+
 
 void sendMessage() {
   // Prepare buffer for transmit.
@@ -417,11 +435,12 @@ void sendMessage() {
 
 #ifdef DEBUGSEND
   Serial.println("\nNow sending ");
-  for (int i = 0; i < PAYLOAD_SIZE; i++) {
-    Serial.print(i);
-    Serial.print(": ");
-    Serial.println(buffer[i], BIN);  
-  }
+  /*for (int i = 0; i < PAYLOAD_SIZE; i++) {
+   Serial.print(i);
+   Serial.print(": ");
+   Serial.println(buffer[i], BIN);  
+   }*/
+  detailedPrint();
 #endif
 
   // Send the packet multiple times.
@@ -452,6 +471,8 @@ void sendMessage() {
   intensity = 0;
 }
 
+
+
 void getMessage() {
   bool done = false;
 
@@ -463,12 +484,17 @@ void getMessage() {
 
   // Spew it (debugging)
 #ifdef DEBUGRECEIVE
-  Serial.println("Got payload");
+  Serial.println("\nGot payload");
+  /*
   for (int i = 0; i < PAYLOAD_SIZE; i++) {
-    Serial.print(i);
-    Serial.print(": ");
-    Serial.println(buffer[i], BIN);  
-  }
+   Serial.print(i);
+   Serial.print(": \t");
+   Serial.println(buffer[i], BIN);  
+   */
+  detailedPrint();
+
+
+
 #endif
   //}  
   // Convert the buffer to usable variables.
@@ -497,6 +523,8 @@ void getMessage() {
   radio.stopListening();
 }
 
+
+
 void startFadeIn() {
   // calculate intensitystep 
   fadeStepTime = (int)fadeSpeedIn * 10 / intensity;
@@ -506,6 +534,8 @@ void startFadeIn() {
   rainbow();  
 }
 
+
+
 void startFadeOut() {
   // calculate intensitystep 
   fadeStepTime = (int)fadeSpeedOut * 10 / intensity;
@@ -514,31 +544,37 @@ void startFadeOut() {
   fadeDirection = FADINGOUT;
 }
 
+
+
 void updateFade() {
-  int timeSincelLastFade = millis() - lastFade;
-  if (timeSincelLastFade < fadeStepTime) {
-    return;
-  }
-  int fadeAmount = timeSincelLastFade / fadeStepTime;
-  if (fadeDirection == FADINGIN) {
-    if (fadeIntensity + fadeAmount >= intensity) {
-      fadeIntensity = intensity;
-      return;
+  if (millis() >= lastFade + fadeStepTime){
+
+    int fadeAmount = timeSincelLastFade / fadeStepTime;
+    if (fadeDirection == FADINGIN) {
+      if (fadeIntensity + fadeAmount >= intensity) {
+        fadeIntensity = intensity;
+        return;
+      }
+      fadeIntensity += fadeAmount;
     }
-    fadeIntensity += fadeAmount;
-  }
-  else { // FADEOUT
-    if (fadeIntensity - fadeAmount <= 0) {
-      fadeIntensity = 0;      
-      return;
+    else { // FADEOUT
+      if (fadeIntensity - fadeAmount <= 0) {
+        fadeIntensity = 0;      
+        return;
+      }
+      fadeIntensity -= timeSincelLastFade / fadeStepTime;        
     }
-    fadeIntensity -= timeSincelLastFade / fadeStepTime;        
+    lastFade = millis();
+
   }
-  lastFade = millis();
+
+
+
 }
 
-void enterSleep(void)
-{
+
+
+void enterSleep(void){
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);   /* EDIT: could also use SLEEP_MODE_PWR_DOWN for lowest power consumption. */
   sleep_enable();
 
@@ -552,10 +588,13 @@ void enterSleep(void)
   power_all_enable();
 }
 
-ISR(WDT_vect)
-{
+
+
+ISR(WDT_vect) {
   justSlept++; // Semi sleep time counter in seconds.
 }
+
+
 
 void setupRadio () {
   radio.begin(); // start rf
@@ -580,6 +619,8 @@ void setupRadio () {
   radio.printDetails();
 #endif
 }
+
+
 
 bool dayLight () {
   // subtract the last reading:
@@ -610,6 +651,8 @@ bool dayLight () {
   }
 }
 
+
+
 void setupSleep() {
   /* Clear the reset flag. */
   MCUSR &= ~(1<<WDRF);
@@ -626,6 +669,8 @@ void setupSleep() {
   WDTCSR |= _BV(WDIE);
 }
 
+
+
 void stopSleep() {
   /* In order to change WDE or the prescaler, we need to
    * set WDCE (This will allow updates for 4 clock cycles).
@@ -634,6 +679,57 @@ void stopSleep() {
   // Disable the WD interrupt. 
   WDTCSR &= ~(_BV(WDIE));
 }
+
+
+
+void detailedPrint(){
+  int i = 0;
+  Serial.print("Time: \t\t");// (2 bytes) start time for color (fraction: 8 bits.8 bits 0-255.0-255)
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("Time: \t\t");
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("Frequency: \t");// (byte) freq for color calcualtion / 100
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("Broad: \t\t");// (byte) color calculation
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("Center: \t");// (byte) range of color calculation
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("Intensity: \t");// (byte) start intensity led
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("ColorShift: \t");// (byte) Amount of color change betwe pixies / 10000
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("FadeOut: \t");// (byte) Speed to fade the led across pixies to black =0 ook stop passing on
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("FadeSpeedIn: \t");// (byte) Speed to fade in the led inside the pixie in miliseconds / 10
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("FadeSpeedOut: \t");// (byte) Speed to fade out led inside pixie miliseconds / 10
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("LedTime: \t");// (byte) Time the LED is on.
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("Rest: \t\t");// (byte) stop listening after sending
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("RestSpeed: \t");// (signed byte) to speed up or slow down sending
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("Future: \t");// (byte) future expansion
+  Serial.println(buffer[i]);  
+  i++;
+  Serial.print("Bitmask: \t"); //    Serial.println(buffer[i], BIN);  
+  Serial.println(buffer[i], BIN);   
+}
+
 
 
 
