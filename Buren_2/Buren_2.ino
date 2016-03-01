@@ -3,7 +3,7 @@
  programming: olav@werccollective.com, herman@kopinga.nl
  
  Updates on: https://github.com/HermanKopinga/Buren/
- 
+ Update 23 feb 2016 
  Hardware:
  - AVR Atmega328p @1MHz (internal oscillator)
  - nrf24l01 wireless modules
@@ -414,16 +414,45 @@ void batteryStatus(){
 
 }
 
+void fastBatteryStatus(){ // show status on startup
+  int battery = readVcc(); // sample battery status
+
+  if ( battery < 3000) {
+#ifdef DEBUG
+    Serial.println ("red");
+#endif
+    makeColor(255,0,0);
+    delay(500);
+    // makeColor(0,0,0); //not needed with marquee afterward
+  }
+  if (battery > 3000 && battery < 3500 ) {
+#ifdef DEBUG
+    Serial.println ("orange");
+#endif
+    makeColor(255,127,0);
+    delay(500);
+    //makeColor(0,0,0);//not needed with marquee afterward
+  }
+  if (battery > 3500) {
+#ifdef DEBUG
+    Serial.println ("green");
+#endif
+    makeColor(0,255,0);
+    delay(500);
+    //makeColor(0,0,0);//not needed with marquee afterward
+  }
+}
+
 
 
 void ledMarquee() {
-  strip.setPixelColor(0, strip.Color(255, 0, 0));
+  strip.setPixelColor(0, strip.Color(10, 255, 255));
   strip.show();
   delay(100);
-  strip.setPixelColor(1, strip.Color(255, 255, 255));
+  strip.setPixelColor(1, strip.Color(20, 255, 255));
   strip.show();
   delay(100);
-  strip.setPixelColor(2, strip.Color(255, 255, 255));
+  strip.setPixelColor(2, strip.Color(30, 255, 255));
   strip.show();
   delay(100);
   strip.setPixelColor(0, strip.Color(0, 0, 0));
@@ -686,6 +715,7 @@ bool dayLight () {
 
 
 void setupSleep() {
+ //fastBatteryStatus();
   makeColor(0,0,0); // close your eyes before sleeping
   
   /* Clear the reset flag. */

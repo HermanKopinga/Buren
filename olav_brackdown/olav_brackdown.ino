@@ -109,6 +109,7 @@ volatile int justSlept = 1;
 
 // Timing variables.
 unsigned long receivedTime = 0;
+unsigned long sentTime = 0;
 
 // Daylight detection averaging variables
 const int numLdrReadings = 15;
@@ -154,6 +155,8 @@ const byte Gamma[256] = {
   184,188,192,196,201,205,210,214,219,224,229,234,239,244,250,255,
 };
 
+byte fadeValues[10] = {  
+  10,  20,  25,  40,  50,  80,  100,  160,  200};
 
 
 void setup(void){
@@ -170,139 +173,178 @@ void setup(void){
   fastBatteryStatus();
   ledMarquee();
 
-  setupSleep();
+  if (!transmitter()) setupSleep();
 
   setupRadio();
+  time = (analogRead(4)+analogRead(ldrPin)+analogRead(4)+analogRead(ldrPin)+analogRead(4)+analogRead(ldrPin)+analogRead(4)+analogRead(ldrPin))*16.0;
+  while (time > 2*PI) time -= 2*PI;
+  Serial.print("Randomly generated time (0-1): ");
+  Serial.println(time / (2 * PI));
 
-  // Marquee again to make sure we didn't crash :-S
-  ledMarquee();  
+  randomSeed(analogRead(ldrPin)*analogRead(ldrPin)*analogRead(ldrPin));
 }
 
 
 
 void loop(void) {
-  // Sleep on daylight OR if monkeyLives (test mode).
-  // Todo: daylight gets called too fast at nighttime, some timerstuff needed.
-  while(dayLight() && !monkeyLives ) {
-    if (justSlept == 0) {
-      radio.powerDown();  
+
+  if (!transmitter()){
+    // Sleep on daylight OR if monkeyLives (test mode).
+    // Todo: daylight gets called too fast at nighttime, some timerstuff needed.
+    while(dayLight() && !monkeyLives ) {
+      if (justSlept == 0) {
+        radio.powerDown();  
 #ifdef DEBUGSLEEP
-      Serial.println("Radio off");
+        Serial.println("Radio off");
+        delay(20); // Wait for the serial message to go through.
+#endif
+      }
+#ifdef DEBUGSLEEP
+      Serial.println("Sleep");
       delay(20); // Wait for the serial message to go through.
 #endif
+      /* Re-enter sleep mode. */
+      enterSleep();
     }
+    if (justSlept) {
 #ifdef DEBUGSLEEP
-    Serial.println("Sleep");
-    delay(20); // Wait for the serial message to go through.
-#endif
-    /* Re-enter sleep mode. */
-    setupSleep();
-    enterSleep();
-  }
-  if (justSlept) {
-#ifdef DEBUGSLEEP
-    Serial.print(justSlept);
-    Serial.println(" Woke up");
-    delay(20); // Wait for the serial message to go through.
+      Serial.print(justSlept);
+      Serial.println(" Woke up");
+      delay(20); // Wait for the serial message to go through.
 #endif   
-    stopSleep();
-    setupRadio();
-    // Delay so radio settles.
-    delay(100);
-    justSlept = 0;
-  }  
+      stopSleep();
+      setupRadio();
+      // Delay so radio settles.
+      delay(100);
+      justSlept = 0;
+    }  
 
 
+    // if there is data ready
+    if (radio.available() && !isFading && !isResting) {
+      // Dump the payloads until we've gotten everything
+      getMessage();
+      // First, stop listening so we can send later.
+      radio.stopListening();
 
 
-  // if there is data ready
-  if (radio.available() && !isFading && !isResting) {
-    // Dump the payloads until we've gotten everything
-    getMessage();
-    // First, stop listening so we can send later.
-    radio.stopListening();
+      // If the battery level was requested, show it through the leds.
+      if (batteryLevel) {
+        batteryStatus();
+      }    
+      else {
+        if (cricket) {
+          playCricket(); // CHIRP 
+        }      
+        startFadeIn();
+        isFading = 1;
+        isResting = 1;
+      }
 
-
-
-
-    // If the battery level was requested, show it through the leds.
-    if (batteryLevel) {
-      batteryStatus();
-    }    
-    else {
-      if (cricket) {
-        playCricket(); // CHIRP 
-      }      
-      startFadeIn();
-      isFading = 1;
-      isResting = 1;
+      receivedTime = millis();
+      sentReply = 0;
     }
 
-    receivedTime = millis();
-    sentReply = 0;
-  }
+
+    if (millis() >= receivedTime + fadeSpeedIn * 10 + ledTime * 10 && fadeDirection == FADINGIN) {
+      startFadeOut();
+    }
 
 
-  if (millis() >= receivedTime + fadeSpeedIn * 10 + ledTime * 10 && fadeDirection == FADINGIN) {
-    startFadeOut();
+
+    if (receivedTime + rest * 10 <= millis()) {
+      if (intensity > fadeOut && sentReply == 0) { //shouldn't send anymore, last pixi in the lin
+        sendMessage();
+        sentReply = 1;
+      }
+    }
+
+
+    // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
+    if(millis() >= receivedTime + rest * 10 * future) {    
+      // David is like Olav :-P
+      radio.read(&buffer, PAYLOAD_SIZE);
+      radio.read(&buffer, PAYLOAD_SIZE);
+      radio.read(&buffer, PAYLOAD_SIZE);
+      radio.read(&buffer, PAYLOAD_SIZE);
+      radio.read(&buffer, PAYLOAD_SIZE);
+      radio.read(&buffer, PAYLOAD_SIZE);
+      radio.read(&buffer, PAYLOAD_SIZE);
+      radio.read(&buffer, PAYLOAD_SIZE);
+
+      // Resume listening so we catch the next packets.
+      radio.startListening();    
+      isResting = 0;
+    }
   }
+
 
   updateFade();
 
-  if (receivedTime + rest * 10 <= millis()) {
-    if (intensity > fadeOut && sentReply == 0) { //shouldn't send anymore, last pixi in the lin
+
+  if (transmitter()){
+
+    if (millis() >= sentTime + fadeSpeedIn * 10 + ledTime * 10 && fadeDirection == FADINGIN) {
+      startFadeOut();
+    }
+
+
+    if (millis() >= sentTime + (fadeSpeedIn + ledTime + fadeSpeedOut) * 10 + random(1000, 5000)) {
+      // First, stop listening so we can send later.
+      radio.stopListening();
+
+      // Set standard values, this PIXI is an origin.
+      //      byte colorPicker = 2;
+      //      if (colorPicker == 0) time = 1.2; //orangish
+      //      if (colorPicker == 1) time = 1.7; //purplish
+      //      if (colorPicker == 2) time = 5; //bloapey
+      //      if (colorPicker == 3) time = 6; //soapey
+      //time = random(blabla) is done in the setup, so after startup the color will remain the same
+      colorShift = 0;// so guess wil always recognise their own color 0.0255;
+      //rest = 75;
+      broad = 127;
+      center = 127;
+      frequency = 1;
+      cricket = 1;
+      intensity = 250;
+      fadeOut = 10; 
+      batteryLevel=0;
+      byte meanMin = 10;
+      byte meanMax = 150;
+      byte meanDif = 50;
+      byte mean = random(0, meanMax-meanMin);
+      ledTime = meanMin + mean + random(0, meanDif);
+      fadeSpeedIn = mean + random(0, meanDif); 
+      fadeSpeedIn = map(fadeSpeedIn,0,meanMax+meanDif-1,0,9);
+      fadeSpeedIn = fadeValues[fadeSpeedIn];
+      fadeSpeedOut = mean + random(0, meanDif); 
+      fadeSpeedOut = map(fadeSpeedOut,0,meanMax+meanDif-1,0,9);
+
+      fadeSpeedOut = fadeValues[fadeSpeedOut];
+      future = 1;
+
+      rest = fadeSpeedIn + ledTime / 2; 
+      //so resend is between fading in and out, this works smoothly for now, 
+      //so no change untill there is more time for testing. 
+
+      //      Serial.print("FadeSpeedIn: ");
+      //      Serial.print(fadeSpeedIn);
+      //      Serial.print(" | LedTime: ");
+      //      Serial.print(ledTime);
+      //      Serial.print(" | FadeSpeedOut: ");
+      //      Serial.print(fadeSpeedOut);
+      //      Serial.print(" | Rest: ");
+      //      Serial.println(rest);
+
+
       sendMessage();
-      sentReply = 1;
+      // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
+      sentTime = millis();    // Now, continue listening
+      radio.startListening();
+      startFadeIn();
     }
   }
-
-
-  // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
-  if(millis() >= receivedTime + rest * 10 * future) {    
-    // David is like Olav :-P
-    radio.read(&buffer, PAYLOAD_SIZE);
-    radio.read(&buffer, PAYLOAD_SIZE);
-    radio.read(&buffer, PAYLOAD_SIZE);
-    radio.read(&buffer, PAYLOAD_SIZE);
-    radio.read(&buffer, PAYLOAD_SIZE);
-    radio.read(&buffer, PAYLOAD_SIZE);
-    radio.read(&buffer, PAYLOAD_SIZE);
-    radio.read(&buffer, PAYLOAD_SIZE);
-
-    // Resume listening so we catch the next packets.
-    radio.startListening();    
-    isResting = 0;
-  }
-
-
-  if (!digitalRead(buttonPin)) {
-    // First, stop listening so we can send later.
-    radio.stopListening();
-
-    // Set standard values, this PIXI is an origin.
-    time = 10; 
-    colorShift = 0.0255;
-    rest = 75;
-    broad = 127;
-    center = 127;
-    frequency = 1;
-    cricket = 1;
-    intensity = 255;
-    batteryLevel=0;
-    ledTime = 50;
-    fadeOut = 0; 
-    fadeSpeedIn = 50; 
-    fadeSpeedOut = 50;
-    future = 3;
-
-    sendMessage();
-    // Delay after sending the packet (wait for it to be far, far away, prevents loopback).
-    delay(rest*10*3);
-    // Now, continue listening
-    radio.startListening();
-  }
 }
-
 
 
 long readVcc() { // read batt level  
@@ -411,25 +453,84 @@ void batteryStatus(){
     makeColor(0,0,0);
     delay(4000);
   }
+}
 
+
+
+void fastBatteryStatus(){
+  int battery = readVcc(); // sample battery status
+
+  if ( battery < 3000) {
+#ifdef DEBUG
+    Serial.println ("red");
+#endif
+    makeColor(255,0,0);
+    delay(500);
+    // makeColor(0,0,0); //not needed with marquee afterward
+  }
+  if (battery > 3000 && battery < 3500 ) {
+#ifdef DEBUG
+    Serial.println ("orange");
+#endif
+    makeColor(255,127,0);
+    delay(500);
+    //makeColor(0,0,0);//not needed with marquee afterward
+  }
+  if (battery > 3500) {
+#ifdef DEBUG
+    Serial.println ("green");
+#endif
+    makeColor(0,255,0);
+    delay(500);
+    //makeColor(0,0,0);//not needed with marquee afterward
+  }
 }
 
 
 
 void ledMarquee() {
-  strip.setPixelColor(0, strip.Color(255, 0, 0));
-  strip.show();
-  delay(100);
-  strip.setPixelColor(1, strip.Color(255, 255, 255));
-  strip.show();
-  delay(100);
-  strip.setPixelColor(2, strip.Color(255, 255, 255));
-  strip.show();
-  delay(100);
-  strip.setPixelColor(0, strip.Color(0, 0, 0));
-  strip.setPixelColor(1, strip.Color(0, 0, 0));
-  strip.setPixelColor(2, strip.Color(0, 0, 0));
-  strip.show();
+  if(transmitter()){
+    strip.setPixelColor(0, strip.Color(0, 0, 255));
+    strip.setPixelColor(1, strip.Color(0, 0, 255));
+    strip.setPixelColor(2, strip.Color(255, 255, 255));
+    strip.show();
+    delay(100);
+    strip.setPixelColor(0, strip.Color(0, 0, 255));
+    strip.setPixelColor(1, strip.Color(255, 255, 255));
+    strip.setPixelColor(2, strip.Color(0, 0, 255));
+    strip.show();
+    delay(100);
+    strip.setPixelColor(0, strip.Color(255, 255, 255));
+    strip.setPixelColor(1, strip.Color(0, 0, 255));
+    strip.setPixelColor(2, strip.Color(0, 0, 255));
+    strip.show();
+    delay(100);
+    strip.setPixelColor(0, strip.Color(0, 0, 0));
+    strip.setPixelColor(1, strip.Color(0, 0, 0));
+    strip.setPixelColor(2, strip.Color(0, 0, 0));
+    strip.show();
+  }
+  else{
+    strip.setPixelColor(0, strip.Color(0, 0, 255));
+    strip.setPixelColor(1, strip.Color(0, 0, 255));
+    strip.setPixelColor(2, strip.Color(255, 255, 255));
+    strip.show();
+    delay(200);
+    strip.setPixelColor(0, strip.Color(0, 0, 255));
+    strip.setPixelColor(1, strip.Color(255, 255, 255));
+    strip.setPixelColor(2, strip.Color(0, 0, 255));
+    strip.show();
+    delay(200);
+    strip.setPixelColor(0, strip.Color(255, 255, 255));
+    strip.setPixelColor(1, strip.Color(0, 0, 255));
+    strip.setPixelColor(2, strip.Color(0, 0, 255));
+    strip.show();
+    delay(200);
+    strip.setPixelColor(0, strip.Color(0, 0, 0));
+    strip.setPixelColor(1, strip.Color(0, 0, 0));
+    strip.setPixelColor(2, strip.Color(0, 0, 0));
+    strip.show();
+  }
 }
 
 
@@ -559,6 +660,7 @@ void getMessage() {
 void startFadeIn() {
   // calculate intensitystep
   ledIntensity = intensity; 
+  //if (transmitter()) ledIntensity /= 4;
   rainbow();
   fadeStep = ledIntensity * FRAMERATEDELAY / (fadeSpeedIn * 10.0);
   fadeIntensity = 0;
@@ -585,11 +687,13 @@ void updateFade() {
     if (fadeDirection == FADINGIN) {
       if (fadeIntensity < ledIntensity){
         fadeIntensity += fadeStep;
+        Serial.println(fadeIntensity);
       }
     }
     if (fadeDirection == FADINGOUT) {
-      if (fadeIntensity > 0){
+      if (fadeIntensity > 0){   
         fadeIntensity -= fadeStep;
+        Serial.println(fadeIntensity);
       }
       else if (isFading == 1){
         isFading = 0;
@@ -643,12 +747,13 @@ void setupRadio () {
   //
   radio.openReadingPipe(0,pipe);
   radio.openWritingPipe(pipe);  
-  ledMarquee();  
   // Start listening
   radio.startListening();  
 
 #ifdef DEBUG
-  radio.printDetails();
+  //radio.printDetails(); 
+  //sorry Herman for commenthing this out while you added the indef for this purpose, 
+  //I still needed the other debug prints. -David
 #endif
 }
 
@@ -686,8 +791,6 @@ bool dayLight () {
 
 
 void setupSleep() {
-  makeColor(0,0,0); // close your eyes before sleeping
-  
   /* Clear the reset flag. */
   MCUSR &= ~(1<<WDRF);
 
@@ -763,6 +866,33 @@ void detailedPrint(){
   Serial.print("Bitmask: \t"); //    Serial.println(buffer[i], BIN);  
   Serial.println(buffer[i], BIN);   
 }
+
+
+
+byte transmitter(){
+  return 1;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
